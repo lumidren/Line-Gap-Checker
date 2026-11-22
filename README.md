@@ -50,6 +50,10 @@ The plugin reads the drawing's units from `INSUNITS` (mm, cm, m, km, in, ft, yd,
 
 ## Install / build
 
+📘 **Full step-by-step guide: [INSTALL.md](INSTALL.md)**. It covers building, auto-loading on startup, security prompts, units, settings, updating, uninstalling and troubleshooting.
+
+Quick version: build the DLL, then run `install.bat` once (with AutoCAD closed) so the plugin loads automatically on every start.
+
 | AutoCAD version | Build |
 |---|---|
 | **2024 or older** (.NET Framework 4.8) | `build.bat "C:\Program Files\Autodesk\AutoCAD 2024"` produces `bin\LineGapChecker.dll` |
@@ -69,6 +73,7 @@ The plugin reads the drawing's units from `INSUNITS` (mm, cm, m, km, in, ft, yd,
 | `src/GapCommands.cs` | AutoCAD layer: `GAPCHECK`, `GAPSET`, `GAPRESET`, and `IExtensionApplication` |
 | `tests/GapEngineTests.cs` | Unit tests (a self-contained console runner, no NuGet) |
 | `test.bat` / `build.bat` / `LineGapChecker.csproj` | Build scripts for both AutoCAD generations |
+| `install.bat` / `uninstall.bat` / `bundle/PackageContents.xml` | Auto-load bundle: AutoCAD loads the plugin on every start |
 
 The sources are written in **C# 5**, so the same files compile with the old Framework `csc.exe` and with the .NET 8 SDK.
 
