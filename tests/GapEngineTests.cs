@@ -40,6 +40,25 @@ namespace LineGapChecker.Tests
             Run("Empty input", EmptyInput);
             Run("50,000-line performance run", Performance50k);
             Run("50,000 random long lines (stress + rotation invariance)", RandomStress50k);
+            Run("Line stops short of an arc", ArcAsTarget);
+            Run("Arc stops short of a line (extends along its circle)", ArcEndStopsShort);
+            Run("Arc overshoots a line by 4 mm", ArcOvershoot);
+            Run("Gap between two arcs on the same circle", CoCircularGap);
+            Run("Arc that almost closes on itself", ArcSelfGap);
+            Run("Line stops short of a tangent arc", LineToTangentArc);
+            Run("Circle is a target and is never flagged", CircleTarget);
+            Run("Closed polyline is clean", ClosedPolylineClean);
+            Run("Open polyline ending on its own start is clean", PolylineEndsOnStart);
+            Run("Polyline stops short of its own first segment", PolylineSelfGap);
+            Run("Polyline overshoots its own first segment", PolylineSelfOvershoot);
+            Run("Polyline open corner with both ends short", PolylineOpenCorner);
+            Run("Bulge arcs bend the right way", BulgeDirection);
+            Run("Polyline ending in an arc stops short", PolylineArcEnd);
+            Run("Overshoot across a short last segment", OvershootAcrossVertex);
+            Run("Duplicate vertices are ignored", DuplicateVertices);
+            Run("Tiny arcs, circles and polylines are trimmed", TinyCurves);
+            Run("Polyline in mm units", PolylineMillimetres);
+            Run("50,000 mixed lines, arcs and polylines (stress + rotation invariance)", MixedStress50k);
 
             Console.WriteLine();
             Console.WriteLine("{0} passed, {1} failed", passed, failed);
@@ -373,6 +392,280 @@ namespace LineGapChecker.Tests
                 if (ra.MarkOf(i) != rb.MarkOf(i)) throw new TestFailure("mark differs for line " + i);
         }
 
+        // ---------------------------------------------------------------- arcs, circles, polylines
+
+        private static void ArcAsTarget()
+        {
+            // Upper half of a 5 m circle; a vertical line stops 50 mm above its top.
+            GapResult r = AnalyzeC(MetreOpts(),
+                GapCurve.FromArc(0, 0, 5, 0, Math.PI),
+                Line(0, 5.05, 0, 8));
+            ExpectMark(r, 0, LineMark.None);
+            ExpectMark(r, 1, LineMark.Extend);
+            GapFinding f = Single(r, 1);
+            Equal(FindingKind.ExtendToLine, f.Kind, "kind");
+            Near(0.05, f.Size, 1e-9, "gap");
+            Equal(0, f.Other, "target is the arc");
+        }
+
+        private static void ArcEndStopsShort()
+        {
+            // A quarter arc of radius 1 m stops 30 mm (measured along the arc) before the wall x = 0.
+            GapResult r = AnalyzeC(MetreOpts(),
+                GapCurve.FromArc(0, 0, 1, 0, Math.PI / 2 - 0.03),
+                Line(0, 0.5, 0, 2));
+            ExpectMark(r, 0, LineMark.Extend);
+            ExpectMark(r, 1, LineMark.None);
+            GapFinding f = Single(r, 0);
+            Equal(FindingKind.ExtendToLine, f.Kind, "kind");
+            Near(0.03, f.Size, 1e-9, "gap along the arc");
+            Near(Math.Cos(Math.PI / 2 - 0.03), f.X, 1e-9, "x of the free end");
+        }
+
+        private static void ArcOvershoot()
+        {
+            // The arc starts 4 mm (along the arc) below the line y = 0 that it crosses.
+            GapResult r = AnalyzeC(MetreOpts(),
+                GapCurve.FromArc(0, 0, 1, -0.004, Math.PI / 2 + 0.004),
+                Line(-2, 0, 2, 0));
+            ExpectMark(r, 0, LineMark.Trim);
+            ExpectMark(r, 1, LineMark.None);
+            GapFinding f = Single(r, 0);
+            Equal(FindingKind.TrimOvershoot, f.Kind, "kind");
+            Near(0.004, f.Size, 1e-9, "stub along the arc");
+        }
+
+        private static void CoCircularGap()
+        {
+            // One 2 m arc split in two with a 30 mm gap.
+            GapResult r = AnalyzeC(MetreOpts(),
+                GapCurve.FromArc(0, 0, 2, 0, Math.PI / 2),
+                GapCurve.FromArc(0, 0, 2, Math.PI / 2 + 0.015, Math.PI / 2 - 0.015));
+            ExpectMark(r, 0, LineMark.Extend);
+            ExpectMark(r, 1, LineMark.Extend);
+            Equal(FindingKind.ExtendCollinear, Single(r, 0).Kind, "kind");
+            Near(0.03, Single(r, 0).Size, 1e-9, "gap 0");
+            Near(0.03, Single(r, 1).Size, 1e-9, "gap 1");
+        }
+
+        private static void ArcSelfGap()
+        {
+            // A circle drawn as an arc that leaves a 30 mm gap.
+            GapResult r = AnalyzeC(MetreOpts(), GapCurve.FromArc(3, 4, 1, 1, 2 * Math.PI - 0.03));
+            ExpectMark(r, 0, LineMark.Extend);
+            Equal(2, Of(r, 0).Count, "one finding per end");
+            foreach (GapFinding f in Of(r, 0))
+            {
+                Equal(FindingKind.ExtendCollinear, f.Kind, "kind");
+                Near(0.03, f.Size, 1e-9, "gap");
+                Equal(0, f.Other, "target is itself");
+            }
+        }
+
+        private static void LineToTangentArc()
+        {
+            // A line runs along y = 1 and stops 30 mm before an arc that starts tangent to it.
+            GapResult r = AnalyzeC(MetreOpts(),
+                Line(-5, 1, -0.03, 1),
+                GapCurve.FromArc(0, 0, 1, Math.PI / 2, -Math.PI / 2));
+            ExpectMark(r, 0, LineMark.Extend);
+            ExpectMark(r, 1, LineMark.None);
+            Near(0.03, Single(r, 0).Size, 1e-9, "gap");
+        }
+
+        private static void CircleTarget()
+        {
+            GapResult r = AnalyzeC(MetreOpts(),
+                GapCurve.FromCircle(0, 0, 1),
+                Line(3, 0, 1.04, 0),          // stops 40 mm short of the circle
+                Line(-3, 0, -1, 0),           // ends exactly on it
+                Line(0.5, -3, 0.5, 3));       // passes through it
+            ExpectMark(r, 0, LineMark.None);
+            ExpectMark(r, 1, LineMark.Extend);
+            ExpectMark(r, 2, LineMark.None);
+            ExpectMark(r, 3, LineMark.None);
+            Near(0.04, Single(r, 1).Size, 1e-9, "gap");
+            Equal(1, r.Findings.Count, "findings");
+        }
+
+        private static void ClosedPolylineClean()
+        {
+            GapResult r = AnalyzeC(MetreOpts(), Poly(true, 0, 0, 5, 0, 5, 5, 0, 5));
+            ExpectNoFindings(r);
+            Equal(0, r.FreeEndCount, "free ends");
+        }
+
+        private static void PolylineEndsOnStart()
+        {
+            // Open polyline whose last vertex repeats the first one.
+            GapResult r = AnalyzeC(MetreOpts(), Poly(false, 0, 0, 5, 0, 5, 5, 0, 5, 0, 0));
+            ExpectNoFindings(r);
+            Equal(0, r.FreeEndCount, "free ends");
+        }
+
+        private static void PolylineSelfGap()
+        {
+            // The last segment stops 50 mm short of the polyline's own first segment.
+            GapResult r = AnalyzeC(MetreOpts(), Poly(false, 0, 0, 5, 0, 5, 5, 0, 5, 0, 0.05));
+            ExpectMark(r, 0, LineMark.Extend);
+            GapFinding f = Single(r, 0);
+            Equal(FindingKind.ExtendToLine, f.Kind, "kind");
+            Near(0.05, f.Size, 1e-9, "gap");
+            Equal(0, f.Other, "target is itself");
+            Near(0.05, f.Y, 1e-12, "at the end vertex");
+        }
+
+        private static void PolylineSelfOvershoot()
+        {
+            // The last segment runs 4 mm past the polyline's own start.
+            GapResult r = AnalyzeC(MetreOpts(), Poly(false, 0, 0, 5, 0, 5, 5, 0, 5, 0, -0.004));
+            ExpectMark(r, 0, LineMark.Trim);
+            GapFinding f = Single(r, 0);
+            Equal(FindingKind.TrimOvershoot, f.Kind, "kind");
+            Near(0.004, f.Size, 1e-9, "stub");
+        }
+
+        private static void PolylineOpenCorner()
+        {
+            // A rectangle whose two ends stop 40 mm and 20 mm short of the shared corner.
+            GapResult r = AnalyzeC(MetreOpts(), Poly(false, 0.04, 0, 5, 0, 5, 5, 0, 5, 0, 0.02));
+            ExpectMark(r, 0, LineMark.Extend);
+            List<GapFinding> fs = Of(r, 0);
+            Equal(2, fs.Count, "one finding per end");
+            foreach (GapFinding f in fs) Equal(FindingKind.ExtendCorner, f.Kind, "kind");
+        }
+
+        private static void BulgeDirection()
+        {
+            // Bulge +1 from (0,0) to (2,0) is a counter-clockwise half circle, so it dips to (1,-1).
+            GapResult down = AnalyzeC(MetreOpts(),
+                GapCurve.FromPolyline(new double[] { 0, 2 }, new double[] { 0, 0 }, new double[] { 1, 0 }, false),
+                Line(1, -2, 1, -1.05));
+            ExpectMark(down, 1, LineMark.Extend);
+            Near(0.05, Single(down, 1).Size, 1e-9, "gap below");
+
+            // Bulge -1 is clockwise and rises to (1,1).
+            GapResult up = AnalyzeC(MetreOpts(),
+                GapCurve.FromPolyline(new double[] { 0, 2 }, new double[] { 0, 0 }, new double[] { -1, 0 }, false),
+                Line(1, 2, 1, 1.05));
+            ExpectMark(up, 1, LineMark.Extend);
+            Near(0.05, Single(up, 1).Size, 1e-9, "gap above");
+            ExpectMark(up, 0, LineMark.None);
+        }
+
+        private static void PolylineArcEnd()
+        {
+            // Straight run, then a clockwise arc (centre 0,0, radius 1) that stops 30 mm along
+            // the arc before the wall y = 0.
+            double end = 0.03;
+            double sweep = -(Math.PI / 2 - end);
+            GapResult r = AnalyzeC(MetreOpts(),
+                GapCurve.FromPolyline(
+                    new double[] { -3, 0, Math.Cos(end) },
+                    new double[] { 1, 1, Math.Sin(end) },
+                    new double[] { 0, Math.Tan(sweep / 4), 0 }, false),
+                Line(0.5, 0, 2, 0));
+            ExpectMark(r, 0, LineMark.Extend);
+            ExpectMark(r, 1, LineMark.None);
+            GapFinding f = Single(r, 0);
+            Equal(FindingKind.ExtendToLine, f.Kind, "kind");
+            Near(0.03, f.Size, 1e-9, "gap along the arc");
+        }
+
+        private static void OvershootAcrossVertex()
+        {
+            // The polyline crosses the wall x = 5, turns 1 mm later and ends 3 mm after that:
+            // the stub (4 mm in total) runs across a vertex.
+            GapResult r = AnalyzeC(MetreOpts(),
+                Poly(false, 0, 0, 5.001, 0, 5.001, 0.003),
+                Line(5, -1, 5, 1));
+            ExpectMark(r, 0, LineMark.Trim);
+            ExpectMark(r, 1, LineMark.None);
+            GapFinding f = Single(r, 0);
+            Equal(FindingKind.TrimOvershoot, f.Kind, "kind");
+            Near(0.004, f.Size, 1e-9, "stub");
+        }
+
+        private static void DuplicateVertices()
+        {
+            // Repeated last vertex: the end still points along the real last segment.
+            GapResult r = AnalyzeC(MetreOpts(),
+                Poly(false, 0, 0, 5, 0, 5, 0),
+                Line(5.05, -1, 5.05, 1));
+            ExpectMark(r, 0, LineMark.Extend);
+            Near(0.05, Single(r, 0).Size, 1e-9, "gap");
+        }
+
+        private static void TinyCurves()
+        {
+            GapResult r = AnalyzeC(MetreOpts(),
+                GapCurve.FromArc(0, 0, 1, 0, 0.003),                 // 3 mm arc
+                GapCurve.FromCircle(10, 10, 0.0005),                 // 3.1 mm round
+                Poly(false, 20, 20, 20.002, 20, 20.002, 20.002),     // 4 mm polyline
+                GapCurve.FromArc(30, 30, 1, 0, 0.006));              // 6 mm arc: fine
+            ExpectMark(r, 0, LineMark.Trim);
+            ExpectMark(r, 1, LineMark.Trim);
+            ExpectMark(r, 2, LineMark.Trim);
+            ExpectMark(r, 3, LineMark.None);
+            Near(0.003, Single(r, 0).Size, 1e-12, "arc length");
+            Near(0.004, Single(r, 2).Size, 1e-12, "polyline length");
+        }
+
+        private static void PolylineMillimetres()
+        {
+            GapOptions o = GapOptions.FromMetres(0.005, 0.10, 1e-6, 1000);
+            GapResult r = AnalyzeC(o,
+                Poly(true, 0, 0, 10000, 0, 10000, 5000, 0, 5000),   // room outline, closed
+                Poly(false, 2000, 50, 2000, 2000, 3000, 2000),     // 50 mm short of the wall: extend
+                Poly(false, 6000, -4, 6000, 2000, 7000, 2000),     // 4 mm through the wall: trim
+                Poly(false, 8000, 150, 8000, 2000));               // 150 mm: too large
+            ExpectMark(r, 0, LineMark.None);
+            ExpectMark(r, 1, LineMark.Extend);
+            ExpectMark(r, 2, LineMark.Trim);
+            ExpectMark(r, 3, LineMark.None);
+            Near(50, Single(r, 1).Size, 1e-9, "gap in mm");
+            Near(4, Single(r, 2).Size, 1e-9, "stub in mm");
+        }
+
+        private static void MixedStress50k()
+        {
+            // Random lines, bulge arcs and polylines with arc segments in a 2 km square. The same
+            // drawing rotated 90 degrees (exact for vertices) must give the same marks.
+            Random rnd = new Random(777);
+            int count = 50000;
+            GapCurve[] a = new GapCurve[count], b = new GapCurve[count];
+            for (int i = 0; i < count; i++)
+            {
+                int nv = i % 3 == 0 ? 2 : 2 + rnd.Next(5);
+                double[] xs = new double[nv], ys = new double[nv], bs = new double[nv];
+                double x = rnd.NextDouble() * 2000, y = rnd.NextDouble() * 2000;
+                for (int v = 0; v < nv; v++)
+                {
+                    xs[v] = x; ys[v] = y;
+                    double ang = rnd.NextDouble() * Math.PI * 2, step = 0.5 + rnd.NextDouble() * 20;
+                    x += Math.Cos(ang) * step; y += Math.Sin(ang) * step;
+                    bs[v] = i % 3 == 1 ? 0 : (rnd.NextDouble() < 0.5 ? 0 : rnd.NextDouble() * 2 - 1);
+                }
+                bool isClosed = i % 17 == 0 && nv > 2;
+                a[i] = GapCurve.FromPolyline(xs, ys, bs, isClosed);
+                double[] rx = new double[nv], ry = new double[nv];
+                for (int v = 0; v < nv; v++) { rx[v] = -ys[v]; ry[v] = xs[v]; }
+                b[i] = GapCurve.FromPolyline(rx, ry, bs, isClosed);
+            }
+
+            Stopwatch sw = Stopwatch.StartNew();
+            GapResult ra = GapEngine.Analyze(a, MetreOpts());
+            sw.Stop();
+            GapResult rb = GapEngine.Analyze(b, MetreOpts());
+            Console.WriteLine("      {0:N0} mixed objects analysed in {1} ms ({2} extend, {3} trim)",
+                count, sw.ElapsedMilliseconds, ra.ExtendCount, ra.TrimCount);
+
+            True(sw.Elapsed.TotalSeconds < 5.0, "finished in under 5 s");
+            Equal(ra.Findings.Count, rb.Findings.Count, "same findings after rotation");
+            for (int i = 0; i < count; i++)
+                if (ra.MarkOf(i) != rb.MarkOf(i)) throw new TestFailure("mark differs for object " + i);
+        }
+
         // ---------------------------------------------------------------- helpers
 
         private static Seg2 L(double x1, double y1, double x2, double y2)
@@ -383,6 +676,24 @@ namespace LineGapChecker.Tests
         private static GapResult Analyze(GapOptions o, params Seg2[] lines)
         {
             return GapEngine.Analyze(lines, o);
+        }
+
+        private static GapResult AnalyzeC(GapOptions o, params GapCurve[] curves)
+        {
+            return GapEngine.Analyze(curves, o);
+        }
+
+        private static GapCurve Line(double x1, double y1, double x2, double y2)
+        {
+            return GapCurve.FromLine(x1, y1, x2, y2);
+        }
+
+        /// <summary>Straight-segment polyline from x,y pairs.</summary>
+        private static GapCurve Poly(bool isClosed, params double[] xy)
+        {
+            double[] xs = new double[xy.Length / 2], ys = new double[xy.Length / 2];
+            for (int i = 0; i < xs.Length; i++) { xs[i] = xy[2 * i]; ys[i] = xy[2 * i + 1]; }
+            return GapCurve.FromPolyline(xs, ys, null, isClosed);
         }
 
         private static List<GapFinding> Of(GapResult r, int line)
