@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AutoCAD Autoloader manifest. install.bat copies this file and the built DLL(s) into
+  %APPDATA%\Autodesk\ApplicationPlugins\LineGapChecker.bundle\ and AutoCAD then loads
+  the plugin on every start, with no NETLOAD needed.
+
+  Two components: AutoCAD picks the one whose version range matches.
+    R23.0-R24.3 = AutoCAD 2019-2024 -> .NET Framework build (build.bat)
+    R25.0+      = AutoCAD 2025+     -> .NET 8 build (LineGapChecker.csproj)
+-->
+<ApplicationPackage
+    SchemaVersion="1.0"
+    AutodeskProduct="AutoCAD"
+    ProductType="Application"
+    Name="LineGapChecker"
+    Description="Finds and colour-codes gaps (extend) and overshoots (trim) between LINE objects."
+    AppVersion="1.0.0"
+    Author="lumidren"
+    ProductCode="{55B7D2F5-6F88-4030-89F6-A74F2C64A56D}"
+    UpgradeCode="{CBCC8F03-5C27-4C64-80FC-393649842A2B}">
+
+  <CompanyDetails Name="lumidren" Url="https://github.com/lumidren/Line-Gap-Checker" />
+
+  <Components Description="AutoCAD 2019-2024 (.NET Framework 4.8)">
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R23.0" SeriesMax="R24.3" />
+    <ComponentEntry
+        AppName="LineGapChecker"
+        Version="1.0.0"
+        ModuleName="./Contents/net48/LineGapChecker.dll"
+        AppDescription="GAPCHECK, GAPSET, GAPRESET"
+        LoadOnAutoCADStartup="True" />
+  </Components>
+
+  <Components Description="AutoCAD 2025 and newer (.NET 8)">
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R25.0" />
+    <ComponentEntry
+        AppName="LineGapChecker"
+        Version="1.0.0"
+        ModuleName="./Contents/net8/LineGapChecker.dll"
+        AppDescription="GAPCHECK, GAPSET, GAPRESET"
+        LoadOnAutoCADStartup="True" />
+  </Components>
+</ApplicationPackage>
