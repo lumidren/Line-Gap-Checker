@@ -45,9 +45,9 @@ This creates `bin\x64\Release\net8.0-windows\LineGapChecker.dll`.
 3. The command line shows:
    ```
    LineGapChecker loaded. Commands:
-     GAPCHECK  Check LINEs: blue = needs extending, magenta = needs trimming
+     GAPCHECK  Check lines, arcs and polylines: blue = needs extending, magenta = needs trimming
      GAPSET    Set thresholds for this session
-     GAPRESET  Restore the original colours of lines marked by GAPCHECK
+     GAPRESET  Restore the original colours of objects marked by GAPCHECK
    ```
 
 You have to repeat this each time you restart AutoCAD.
@@ -70,9 +70,9 @@ AutoCAD warns before loading code from a folder it doesn't trust (the `SECURELOA
 
 ## Step 3: Check that it works
 
-1. Open a drawing that contains LINEs, or draw a quick test: one long horizontal line, and a vertical line that stops a little short of it.
-2. Type `GAPCHECK` and press **Enter** to check all lines.
-3. Lines that stop short turn **blue**, and lines that stick out a little turn **magenta**. The command line prints a summary.
+1. Open a drawing that contains lines, arcs or polylines, or draw a quick test: one long horizontal line, and a vertical line that stops a little short of it.
+2. Type `GAPCHECK` and press **Enter** to check everything.
+3. Objects that stop short turn **blue**, and objects that stick out a little turn **magenta**. The command line prints a summary.
 4. Type `GAPRESET` to put the colours back.
 
 ## Configuration
@@ -91,7 +91,7 @@ Type `GAPSET`, pick an option, enter a new value, then press **Enter** to finish
 |---|---|---|
 | `Short` | 0.005 m (5 mm) | Overshoots up to this length are flagged for trimming, and so are whole lines this short |
 | `Gap` | 0.10 m (10 cm) | Gaps up to this size are flagged for extending. Bigger gaps are treated as intentional. |
-| `Tolerance` | 0.000001 m | Lines closer than this count as touching |
+| `Tolerance` | 0.000001 m | Objects closer than this count as touching |
 | `Units` | 0 | Drawing units per metre. `0` = automatic from `INSUNITS`. Set it, e.g. `1000` for millimetres, only if `INSUNITS` can't be trusted. |
 | `Defaults` | | Puts all of the above back to the defaults |
 
@@ -105,7 +105,7 @@ Type `GAPSET`, pick an option, enter a new value, then press **Enter** to finish
 
 ## Uninstalling
 
-1. In every drawing where lines are still coloured, run `GAPRESET`.
+1. In every drawing where objects are still coloured, run `GAPRESET`.
 2. Close AutoCAD.
 3. Run:
    ```powershell
@@ -121,9 +121,10 @@ If you only used `NETLOAD`, there's nothing to uninstall. The plugin is gone aft
 | `Unknown command "GAPCHECK"` | The plugin isn't loaded. Run `NETLOAD`, or check that `install.bat` ran while AutoCAD was closed. |
 | `NETLOAD` fails with "Cannot load assembly" | The DLL is blocked: Properties → **Unblock**. Or it's the wrong build for your version, since 2025+ needs the .NET 8 build. |
 | `build.bat` says the AutoCAD DLLs were not found | Wrong folder. Pass the folder that contains `acdbmgd.dll`. |
-| Nothing is flagged, but there are gaps | The drawing uses **polylines**: `EXPLODE` them, because only LINEs are checked. Or the gaps are larger than the `Gap` limit, or the units are wrong. |
+| Nothing is flagged, but there are gaps | The gaps may be larger than the `Gap` limit, or the units may be wrong. Splines, ellipses and spline-fit polylines are not checked: the summary says how many objects were skipped. |
+| A whole polyline turned blue or magenta | A polyline is one object, so the whole thing is coloured. The coordinates in the summary show which end needs fixing. |
 | Far too many lines are flagged | The units are probably wrong. Check `UNITS` → Insertion scale. |
-| "flagged line(s) are on locked layers" | Locked lines are checked but not recoloured. Unlock the layer and run `GAPCHECK` again. |
+| "flagged object(s) are on locked layers" | Locked objects are checked but not recoloured. Unlock the layer and run `GAPCHECK` again. |
 | `install.bat` says "Copy failed" | AutoCAD is open and holding the DLL. Close it and run the script again. |
 
 > **Status:** the geometry engine and the build and install scripts are tested. Loading inside AutoCAD has not been tested yet, because no AutoCAD was available while this was built. Please report anything that doesn't work as described.
