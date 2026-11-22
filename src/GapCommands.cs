@@ -1,6 +1,7 @@
 // GapCommands.cs - AutoCAD command layer for LineGapChecker.
 //
 // Commands: GAPCHECK, GAPSET, GAPRESET. All geometry work is in GapEngine.cs.
+// Checks LINE, ARC, CIRCLE, LWPOLYLINE and simple 2D/3D POLYLINE objects.
 // Written in C# 5 so it builds with the .NET Framework csc.exe (AutoCAD 2024 and older)
 // as well as with the net8.0-windows SDK project (AutoCAD 2025 and newer).
 //
@@ -78,9 +79,9 @@ namespace LineGapChecker
 
         internal const string HelpText =
             "\nLineGapChecker loaded. Commands:" +
-            "\n  GAPCHECK  Check LINEs: blue = needs extending, magenta = needs trimming" +
+            "\n  GAPCHECK  Check lines, arcs and polylines: blue = needs extending, magenta = needs trimming" +
             "\n  GAPSET    Set thresholds for this session" +
-            "\n  GAPRESET  Restore the original colours of lines marked by GAPCHECK\n";
+            "\n  GAPRESET  Restore the original colours of objects marked by GAPCHECK\n";
 
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
@@ -114,7 +115,8 @@ namespace LineGapChecker
 
             Stopwatch sw = Stopwatch.StartNew();
             GapResult result;
-            int lineCount, polylineCount, restored, restoreSkipped, lockedSkipped = 0;
+            ObjectCounts counts = new ObjectCounts();
+            int restored, restoreSkipped, lockedSkipped = 0;
 
             using (Transaction tr = db.TransactionManager.StartTransaction())
             {
@@ -124,57 +126,61 @@ namespace LineGapChecker
                 RestoreMarked(tr, db, locks, out restored, out restoreSkipped);
 
                 // 2. Read the geometry (objects stay open for read only).
-                ObjectId[] ids;
-                if (selectAll)
-                {
-                    ids = AllLinesInCurrentSpace(tr, db, out polylineCount);
-                }
-                else
-                {
-                    ids = picked;
-                    polylineCount = CountPolylinesInCurrentSpace(tr, db);
-                }
-                lineCount = ids.Length;
-
-                Line[] lines = new Line[ids.Length];
-                Seg2[] segs = new Seg2[ids.Length];
+                ObjectId[] ids = selectAll ? AllCandidatesInCurrentSpace(tr, db) : picked;
+                List<Entity> entities = new List<Entity>(ids.Length);
+                List<GapCurve> curves = new List<GapCurve>(ids.Length);
                 for (int i = 0; i < ids.Length; i++)
                 {
-                    Line ln = (Line)tr.GetObject(ids[i], OpenMode.ForRead);
-                    Point3d a = ln.StartPoint, b = ln.EndPoint;
-                    lines[i] = ln;
-                    segs[i] = new Seg2(a.X, a.Y, b.X, b.Y);
+                    Entity ent = tr.GetObject(ids[i], OpenMode.ForRead) as Entity;
+                    if (ent == null) continue;
+                    GapCurve curve = ToCurve(tr, ent, counts);
+                    if (curve == null) continue;
+                    entities.Add(ent);
+                    curves.Add(curve);
                 }
 
                 // 3. Analyse.
                 GapOptions opt = GapOptions.FromMetres(
                     GapSettings.ShortLengthM, GapSettings.MaxGapM, GapSettings.TouchTolM, upm);
-                result = GapEngine.Analyze(segs, opt);
+                result = GapEngine.Analyze(curves.ToArray(), opt);
 
-                // 4. Colour. Upgrade to write only for lines that change.
+                // 4. Colour. Upgrade to write only for objects that change.
                 if (result.ExtendCount + result.TrimCount > 0) EnsureRegApp(tr, db);
-                for (int i = 0; i < lines.Length; i++)
+                for (int i = 0; i < entities.Count; i++)
                 {
                     LineMark mark = result.MarkOf(i);
                     if (mark == LineMark.None) continue;
-                    Line ln = lines[i];
-                    if (locks.IsLocked(ln.LayerId) || !TryUpgradeOpen(ln))
+                    Entity ent = entities[i];
+                    if (locks.IsLocked(ent.LayerId) || !TryUpgradeOpen(ent))
                     {
                         lockedSkipped++;
                         continue;
                     }
-                    // A line still carrying our XData (it was on a locked layer during the
+                    // An object still carrying our XData (it was on a locked layer during the
                     // restore) already holds its true original colour: keep that one.
-                    if (!HasMarkXData(ln)) SaveOriginalColor(ln);
-                    ln.ColorIndex = mark == LineMark.Trim ? MagentaAci : BlueAci;
+                    if (!HasMarkXData(ent)) SaveOriginalColor(ent);
+                    ent.ColorIndex = mark == LineMark.Trim ? MagentaAci : BlueAci;
                 }
 
                 tr.Commit();
             }
             sw.Stop();
 
-            PrintSummary(ed, result, upm, unitText, lineCount, polylineCount,
+            PrintSummary(ed, result, upm, unitText, counts,
                          restored, restoreSkipped, lockedSkipped, sw.ElapsedMilliseconds);
+        }
+
+        /// <summary>Object types GAPCHECK reads, as DXF names (also the selection filter).</summary>
+        private const string CandidateDxfNames = "LINE,ARC,CIRCLE,LWPOLYLINE,POLYLINE";
+
+        private sealed class ObjectCounts
+        {
+            public int Lines, Arcs, Circles, Polylines, Skipped;
+
+            public int Checked
+            {
+                get { return Lines + Arcs + Circles + Polylines; }
+            }
         }
 
         /// <summary>Returns false if the user cancelled.</summary>
@@ -183,10 +189,10 @@ namespace LineGapChecker
             ids = null;
             selectAll = false;
 
-            TypedValue[] filterList = { new TypedValue((int)DxfCode.Start, "LINE") };
+            TypedValue[] filterList = { new TypedValue((int)DxfCode.Start, CandidateDxfNames) };
             SelectionFilter filter = new SelectionFilter(filterList);
             PromptSelectionOptions pso = new PromptSelectionOptions();
-            pso.MessageForAdding = "\nSelect lines to check [Enter = all]: ";
+            pso.MessageForAdding = "\nSelect lines, arcs, circles or polylines to check [Enter = all]: ";
             pso.RejectObjectsFromNonCurrentSpace = true;
 
             PromptSelectionResult psr = ed.GetSelection(pso, filter);
@@ -198,42 +204,141 @@ namespace LineGapChecker
                 case PromptStatus.Cancel:
                     return false;
                 default:
-                    // Enter on an empty selection comes back as Error (or None): use every LINE.
+                    // Enter on an empty selection comes back as Error (or None): use everything.
                     selectAll = true;
                     return true;
             }
         }
 
-        private static ObjectId[] AllLinesInCurrentSpace(Transaction tr, Database db, out int polylineCount)
+        private static ObjectId[] AllCandidatesInCurrentSpace(Transaction tr, Database db)
         {
             List<ObjectId> ids = new List<ObjectId>();
-            polylineCount = 0;
-            RXClass lineClass = RXObject.GetClass(typeof(Line));
             BlockTableRecord space = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForRead);
             foreach (ObjectId id in space)
             {
-                RXClass cls = id.ObjectClass;
-                if (cls.IsDerivedFrom(lineClass)) ids.Add(id);
-                else if (IsPolyline(cls)) polylineCount++;
+                if (IsCandidate(id.ObjectClass)) ids.Add(id);
             }
             return ids.ToArray();
         }
 
-        private static int CountPolylinesInCurrentSpace(Transaction tr, Database db)
+        private static bool IsCandidate(RXClass cls)
         {
-            int count = 0;
-            BlockTableRecord space = (BlockTableRecord)tr.GetObject(db.CurrentSpaceId, OpenMode.ForRead);
-            foreach (ObjectId id in space)
+            switch (cls.DxfName)
             {
-                if (IsPolyline(id.ObjectClass)) count++;
+                case "LINE":
+                case "ARC":
+                case "CIRCLE":
+                case "LWPOLYLINE":
+                case "POLYLINE":
+                    return true;
+                default:
+                    return false;
             }
-            return count;
         }
 
-        private static bool IsPolyline(RXClass cls)
+        /// <summary>
+        /// Converts a supported object to engine geometry in WCS (Z is ignored), or returns null
+        /// and counts it as skipped: spline- or curve-fit polylines, meshes, and arcs, circles or
+        /// polylines that are not drawn flat in the XY plane.
+        /// </summary>
+        private static GapCurve ToCurve(Transaction tr, Entity ent, ObjectCounts counts)
         {
-            string dxf = cls.DxfName;
-            return dxf == "LWPOLYLINE" || dxf == "POLYLINE";
+            Line ln = ent as Line;
+            if (ln != null)
+            {
+                Point3d a = ln.StartPoint, b = ln.EndPoint;
+                counts.Lines++;
+                return GapCurve.FromLine(a.X, a.Y, b.X, b.Y);
+            }
+
+            Arc arc = ent as Arc;
+            if (arc != null)
+            {
+                double nz = arc.Normal.Z;
+                if (!IsFlat(nz)) { counts.Skipped++; return null; }
+                Point3d c = arc.Center, s = arc.StartPoint;
+                // StartPoint is in WCS. Seen from +Z, an arc whose normal points down runs clockwise.
+                double startAngle = Math.Atan2(s.Y - c.Y, s.X - c.X);
+                double sweep = nz > 0 ? arc.TotalAngle : -arc.TotalAngle;
+                counts.Arcs++;
+                return GapCurve.FromArc(c.X, c.Y, arc.Radius, startAngle, sweep);
+            }
+
+            Circle circle = ent as Circle;
+            if (circle != null)
+            {
+                if (!IsFlat(circle.Normal.Z)) { counts.Skipped++; return null; }
+                Point3d c = circle.Center;
+                counts.Circles++;
+                return GapCurve.FromCircle(c.X, c.Y, circle.Radius);
+            }
+
+            Polyline pl = ent as Polyline;
+            if (pl != null)
+            {
+                double nz = pl.Normal.Z;
+                if (!IsFlat(nz)) { counts.Skipped++; return null; }
+                int nv = pl.NumberOfVertices;
+                if (nv == 0) { counts.Skipped++; return null; }
+                double[] x = new double[nv], y = new double[nv], bulge = new double[nv];
+                for (int i = 0; i < nv; i++)
+                {
+                    Point3d p = pl.GetPoint3dAt(i);     // WCS
+                    x[i] = p.X;
+                    y[i] = p.Y;
+                    // Bulges are defined around the polyline's normal: flip them for a downward normal.
+                    bulge[i] = nz > 0 ? pl.GetBulgeAt(i) : -pl.GetBulgeAt(i);
+                }
+                counts.Polylines++;
+                return GapCurve.FromPolyline(x, y, bulge, pl.Closed);
+            }
+
+            Polyline2d p2 = ent as Polyline2d;
+            if (p2 != null)
+            {
+                double nz = p2.Normal.Z;
+                if (p2.PolyType != Poly2dType.SimplePoly || !IsFlat(nz)) { counts.Skipped++; return null; }
+                List<double> x = new List<double>(), y = new List<double>(), bulge = new List<double>();
+                foreach (ObjectId vid in p2)
+                {
+                    Vertex2d v = tr.GetObject(vid, OpenMode.ForRead) as Vertex2d;
+                    if (v == null) continue;
+                    Point3d p = p2.VertexPosition(v);   // WCS
+                    x.Add(p.X);
+                    y.Add(p.Y);
+                    bulge.Add(nz > 0 ? v.Bulge : -v.Bulge);
+                }
+                if (x.Count == 0) { counts.Skipped++; return null; }
+                counts.Polylines++;
+                return GapCurve.FromPolyline(x.ToArray(), y.ToArray(), bulge.ToArray(), p2.Closed);
+            }
+
+            Polyline3d p3 = ent as Polyline3d;
+            if (p3 != null)
+            {
+                if (p3.PolyType != Poly3dType.SimplePoly) { counts.Skipped++; return null; }
+                List<double> x = new List<double>(), y = new List<double>();
+                foreach (ObjectId vid in p3)
+                {
+                    PolylineVertex3d v = tr.GetObject(vid, OpenMode.ForRead) as PolylineVertex3d;
+                    if (v == null) continue;
+                    x.Add(v.Position.X);                // WCS; checked in plan view like LINEs
+                    y.Add(v.Position.Y);
+                }
+                if (x.Count == 0) { counts.Skipped++; return null; }
+                counts.Polylines++;
+                return GapCurve.FromPolyline(x.ToArray(), y.ToArray(), null, p3.Closed);
+            }
+
+            counts.Skipped++;   // polyface and polygon meshes also have the DXF name POLYLINE
+            return null;
+        }
+
+        /// <summary>True when an object's normal is (anti)parallel to the Z axis.</summary>
+        private static bool IsFlat(double normalZ)
+        {
+            // 1e-6 allows a tilt of about 0.08 degrees: the plan view then shrinks by at most 1 ppm.
+            return Math.Abs(normalZ) >= 1 - 1e-6;
         }
 
         private static double ResolveUnitsPerMetre(Database db, Editor ed, out string unitText)
@@ -260,12 +365,17 @@ namespace LineGapChecker
         }
 
         private static void PrintSummary(Editor ed, GapResult r, double upm, string unitText,
-                                         int lineCount, int polylineCount, int restored,
+                                         ObjectCounts counts, int restored,
                                          int restoreSkipped, int lockedSkipped, long ms)
         {
             StringBuilder sb = new StringBuilder();
-            sb.Append("\n\nGAPCHECK: ").Append(lineCount).Append(" line(s) checked in ")
+            sb.Append("\n\nGAPCHECK: ").Append(counts.Checked).Append(" object(s) checked in ")
               .Append(ms).Append(" ms. Units: ").Append(unitText).Append('.');
+            if (counts.Checked > 0)
+                sb.Append("\n  ").Append(counts.Lines).Append(" line(s), ")
+                  .Append(counts.Arcs).Append(" arc(s), ")
+                  .Append(counts.Circles).Append(" circle(s), ")
+                  .Append(counts.Polylines).Append(" polyline(s).");
             sb.Append("\n  Thresholds: short/overshoot ").Append(Num(GapSettings.ShortLengthM))
               .Append(" m, max gap ").Append(Num(GapSettings.MaxGapM))
               .Append(" m, touch tolerance ").Append(Num(GapSettings.TouchTolM)).Append(" m.");
@@ -276,18 +386,18 @@ namespace LineGapChecker
                   .Append(" of these also need extending; they are coloured magenta)");
 
             if (restored > 0)
-                sb.Append("\n  ").Append(restored).Append(" line(s) from the previous run were restored first.");
+                sb.Append("\n  ").Append(restored).Append(" object(s) from the previous run were restored first.");
             if (restoreSkipped > 0)
                 sb.Append("\n  ").Append(restoreSkipped)
-                  .Append(" marked line(s) on locked layers could not be restored.");
+                  .Append(" marked object(s) on locked layers could not be restored.");
             if (lockedSkipped > 0)
                 sb.Append("\n  ").Append(lockedSkipped)
-                  .Append(" flagged line(s) are on locked layers and were not recoloured. Unlock and run GAPCHECK again.");
-            if (polylineCount > 0)
-                sb.Append("\n  ").Append(polylineCount)
-                  .Append(" polyline(s) in this space were not checked. Only LINE objects are supported: EXPLODE polylines first.");
-            if (lineCount == 0)
-                sb.Append("\n  No LINE objects to check.");
+                  .Append(" flagged object(s) are on locked layers and were not recoloured. Unlock and run GAPCHECK again.");
+            if (counts.Skipped > 0)
+                sb.Append("\n  ").Append(counts.Skipped)
+                  .Append(" object(s) were skipped: spline- or curve-fit polylines, meshes, or objects not drawn flat in the XY plane.");
+            if (counts.Checked == 0)
+                sb.Append("\n  No lines, arcs, circles or polylines to check.");
 
             List<GapFinding> findings = new List<GapFinding>(r.Findings);
             findings.Sort(CompareFindings);
@@ -305,7 +415,7 @@ namespace LineGapChecker
                       .Append((f.Size / upm).ToString("0.0000", Inv).PadLeft(9)).Append(" m")
                       .Append("  at ").Append(Num(f.X)).Append(',').Append(Num(f.Y));
                     if (r.NeedsTrim[f.Line] && r.NeedsExtend[f.Line])
-                        sb.Append("  [line needs trim and extend]");
+                        sb.Append("  [object needs trim and extend]");
                 }
             }
             sb.Append('\n');
@@ -411,9 +521,9 @@ namespace LineGapChecker
                     RestoreMarked(tr, db, new LayerLockCache(tr), out restored, out skipped);
                     tr.Commit();
                 }
-                string msg = "\nGAPRESET: " + restored + " line(s) restored to their original colour.";
+                string msg = "\nGAPRESET: " + restored + " object(s) restored to their original colour.";
                 if (skipped > 0)
-                    msg += "\n  " + skipped + " marked line(s) are on locked layers and were left as they are. Unlock and run GAPRESET again.";
+                    msg += "\n  " + skipped + " marked object(s) are on locked layers and were left as they are. Unlock and run GAPRESET again.";
                 Print(ed, msg + "\n");
             }
             catch (System.Exception ex)
@@ -425,8 +535,8 @@ namespace LineGapChecker
         // ------------------------------------------------------------------ colour / XData
 
         /// <summary>
-        /// Restores every LINE in model space and all layouts that carries our XData.
-        /// Lines on locked layers are left unchanged (and keep their XData).
+        /// Restores every line, arc, circle and polyline in model space and all layouts that
+        /// carries our XData. Objects on locked layers are left unchanged (and keep their XData).
         /// </summary>
         private static void RestoreMarked(Transaction tr, Database db, LayerLockCache locks,
                                           out int restored, out int skipped)
@@ -437,7 +547,6 @@ namespace LineGapChecker
             RegAppTable rat = (RegAppTable)tr.GetObject(db.RegAppTableId, OpenMode.ForRead);
             if (!rat.Has(AppName)) return;   // nothing was ever marked in this drawing
 
-            RXClass lineClass = RXObject.GetClass(typeof(Line));
             BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
             foreach (ObjectId btrId in bt)
             {
@@ -445,22 +554,23 @@ namespace LineGapChecker
                 if (!btr.IsLayout) continue;
                 foreach (ObjectId id in btr)
                 {
-                    if (!id.ObjectClass.IsDerivedFrom(lineClass)) continue;
-                    Line ln = (Line)tr.GetObject(id, OpenMode.ForRead);
-                    using (ResultBuffer rb = ln.GetXDataForApplication(AppName))
+                    if (!IsCandidate(id.ObjectClass)) continue;
+                    Entity ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                    if (ent == null) continue;
+                    using (ResultBuffer rb = ent.GetXDataForApplication(AppName))
                     {
                         if (rb == null) continue;
-                        if (locks.IsLocked(ln.LayerId) || !TryUpgradeOpen(ln))
+                        if (locks.IsLocked(ent.LayerId) || !TryUpgradeOpen(ent))
                         {
                             skipped++;
                             continue;
                         }
-                        ln.Color = ColorFromXData(rb.AsArray());
+                        ent.Color = ColorFromXData(rb.AsArray());
                         // Setting XData to just the app name removes this app's XData.
                         using (ResultBuffer clear = new ResultBuffer(
                             new TypedValue((int)DxfCode.ExtendedDataRegAppName, AppName)))
                         {
-                            ln.XData = clear;
+                            ent.XData = clear;
                         }
                         restored++;
                     }
