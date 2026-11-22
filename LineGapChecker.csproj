@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    LineGapChecker for AutoCAD 2025 and newer (.NET 8).
+    Build:  dotnet build -c Release -p:AcadDir="C:\Program Files\Autodesk\AutoCAD 2025"
+    Output: bin\x64\Release\net8.0-windows\LineGapChecker.dll  (load with NETLOAD)
+
+    For AutoCAD 2024 and older use build.bat (.NET Framework 4.8).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">x64</Platform>
+    <AssemblyName>LineGapChecker</AssemblyName>
+    <RootNamespace>LineGapChecker</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <!-- Compile only the plugin sources; tests\ has its own Main. -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AcadDir Condition="'$(AcadDir)' == ''">C:\Program Files\Autodesk\AutoCAD 2025</AcadDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="src\GapEngine.cs" />
+    <Compile Include="src\GapCommands.cs" />
+  </ItemGroup>
+
+  <!-- AutoCAD's own assemblies: reference only, never copied (Copy Local = false). -->
+  <ItemGroup>
+    <Reference Include="acdbmgd">
+      <HintPath>$(AcadDir)\acdbmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="accoremgd">
+      <HintPath>$(AcadDir)\accoremgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="acmgd">
+      <HintPath>$(AcadDir)\acmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
