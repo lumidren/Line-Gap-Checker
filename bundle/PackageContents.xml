@@ -4,9 +4,10 @@
   %APPDATA%\Autodesk\ApplicationPlugins\LineGapChecker.bundle\ and AutoCAD then loads
   the plugin on every start, with no NETLOAD needed.
 
-  Two components: AutoCAD picks the one whose version range matches.
-    R23.0-R24.3 = AutoCAD 2019-2024 -> .NET Framework build (build.bat)
-    R25.0+      = AutoCAD 2025+     -> .NET 8 build (LineGapChecker.csproj)
+  Three components: AutoCAD picks the one whose version range matches.
+    R23.0-R24.3 = AutoCAD 2019-2024 -> .NET Framework 4.8 build (net48)
+    R25.0-R25.1 = AutoCAD 2025-2026 -> .NET 8 build (net8.0-windows)
+    R26.0+      = AutoCAD 2027+     -> .NET 10 build (net10.0-windows)
 -->
 <ApplicationPackage
     SchemaVersion="1.0"
@@ -14,7 +15,7 @@
     ProductType="Application"
     Name="LineGapChecker"
     Description="Finds and colour-codes gaps (extend) and overshoots (trim) between lines, arcs, circles and polylines."
-    AppVersion="1.1.0"
+    AppVersion="1.2.0"
     Author="lumidren"
     ProductCode="{55B7D2F5-6F88-4030-89F6-A74F2C64A56D}"
     UpgradeCode="{CBCC8F03-5C27-4C64-80FC-393649842A2B}">
@@ -25,18 +26,28 @@
     <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R23.0" SeriesMax="R24.3" />
     <ComponentEntry
         AppName="LineGapChecker"
-        Version="1.1.0"
+        Version="1.2.0"
         ModuleName="./Contents/net48/LineGapChecker.dll"
         AppDescription="GAPCHECK, GAPSET, GAPRESET"
         LoadOnAutoCADStartup="True" />
   </Components>
 
-  <Components Description="AutoCAD 2025 and newer (.NET 8)">
-    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R25.0" />
+  <Components Description="AutoCAD 2025-2026 (.NET 8)">
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R25.0" SeriesMax="R25.1" />
     <ComponentEntry
         AppName="LineGapChecker"
-        Version="1.1.0"
+        Version="1.2.0"
         ModuleName="./Contents/net8/LineGapChecker.dll"
+        AppDescription="GAPCHECK, GAPSET, GAPRESET"
+        LoadOnAutoCADStartup="True" />
+  </Components>
+
+  <Components Description="AutoCAD 2027 and newer (.NET 10)">
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R26.0" />
+    <ComponentEntry
+        AppName="LineGapChecker"
+        Version="1.2.0"
+        ModuleName="./Contents/net10/LineGapChecker.dll"
         AppDescription="GAPCHECK, GAPSET, GAPRESET"
         LoadOnAutoCADStartup="True" />
   </Components>
