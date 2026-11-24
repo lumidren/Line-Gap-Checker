@@ -1,76 +1,74 @@
 # Installing and configuring Line Gap Checker
 
-This guide covers how to build the plugin, load it into AutoCAD (once, or automatically on every start), configure it, update it and remove it.
+This guide covers how to install the plugin so AutoCAD loads it on every start, and how to configure, update and remove it. Building from source is at the end. You only need it to change the code.
 
 ## Before you start
 
-- **Full AutoCAD on 64-bit Windows.** AutoCAD **LT does not support plugins**, so this tool cannot run in LT.
-- Know your AutoCAD version, because it decides which build you need:
+- **Full AutoCAD 2019 or newer on 64-bit Windows.** AutoCAD **LT does not support plugins**, so this tool cannot run in LT.
+- **Close AutoCAD** before you install, update or remove the plugin. AutoCAD locks the plugin while it runs.
+- You don't need admin rights, Visual Studio or a .NET SDK.
 
-| Your AutoCAD | Build type | What you need on the PC |
-|---|---|---|
-| 2019 – 2024 | .NET Framework 4.8 | Nothing extra: `build.bat` uses the compiler that ships with Windows |
-| 2025 and newer | .NET 8 | The [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) |
+## Step 1: Install
 
-- Find your **AutoCAD install folder**. It is usually `C:\Program Files\Autodesk\AutoCAD 2024`. If you're not sure, right-click the AutoCAD shortcut and choose **Open file location**.
+### Option A: one line in PowerShell (recommended)
 
-## Step 1: Build the DLL
-
-Open a terminal in this folder and run the command for your version.
-
-**AutoCAD 2019 – 2024:**
-
-```powershell
-.\build.bat "C:\Program Files\Autodesk\AutoCAD 2024"
-```
-
-This runs the unit tests first, then creates `bin\LineGapChecker.dll`.
-
-**AutoCAD 2025 and newer:**
-
-```powershell
-dotnet build LineGapChecker.csproj -c Release -p:AcadDir="C:\Program Files\Autodesk\AutoCAD 2025"
-```
-
-This creates `bin\x64\Release\net8.0-windows\LineGapChecker.dll`.
-
-> If someone sends you an already-built `LineGapChecker.dll`, skip this step. Right-click the file → **Properties** → tick **Unblock** → **OK**. Windows blocks DLLs that arrive by download, email or zip, and AutoCAD will refuse to load a blocked file.
-
-## Step 2: Load it into AutoCAD
-
-### Option A: Load once (for a quick test)
-
-1. In AutoCAD, type `NETLOAD` and press Enter.
-2. Pick `LineGapChecker.dll`.
-3. The command line shows:
-   ```
-   LineGapChecker loaded. Commands:
-     GAPCHECK  Check lines, arcs and polylines: blue = needs extending, magenta = needs trimming
-     GAPSET    Set thresholds for this session
-     GAPRESET  Restore the original colours of objects marked by GAPCHECK
-   ```
-
-You have to repeat this each time you restart AutoCAD.
-
-### Option B: Load automatically on every start (recommended)
-
-1. **Close AutoCAD.**
-2. Run:
+1. Open **PowerShell**: Start menu → type `powershell` → Enter.
+2. Paste this line and press Enter:
    ```powershell
-   .\install.bat
+   irm https://raw.githubusercontent.com/lumidren/Line-Gap-Checker/main/install.ps1 | iex
    ```
-   This copies the plugin into `%APPDATA%\Autodesk\ApplicationPlugins\LineGapChecker.bundle`. AutoCAD checks that folder at startup. The bundle holds both builds, and AutoCAD picks the right one for its version.
-3. Start AutoCAD. The command list appears on the command line, and the commands work in every drawing.
+3. It downloads `LineGapChecker.zip` from the latest GitHub release and installs it. You should see:
+   ```
+   Line Gap Checker 1.2.0 installed to C:\Users\<you>\AppData\Roaming\Autodesk\ApplicationPlugins\LineGapChecker.bundle
+   Builds: net10, net48, net8 (AutoCAD picks the right one for its version)
+   ```
+
+`irm` downloads the script and `iex` runs it. To read the script before you run it, open [install.ps1](install.ps1).
+
+### Option B: download the zip
+
+1. Download **`LineGapChecker.zip`** from the [latest release](https://github.com/lumidren/Line-Gap-Checker/releases/latest).
+2. Unzip it anywhere, for example with right-click → **Extract All**.
+3. Double-click **`install.bat`** in the unzipped folder.
+
+### What gets installed
+
+Both options copy one folder, `LineGapChecker.bundle`, into `%APPDATA%\Autodesk\ApplicationPlugins`. AutoCAD checks that folder at startup and loads every bundle in it. The bundle holds three builds, and AutoCAD picks the one that matches its version:
+
+| Your AutoCAD | Runtime | Folder in the bundle |
+|---|---|---|
+| 2019 – 2024 | .NET Framework 4.8 | `Contents\net48` |
+| 2025 – 2026 | .NET 8 | `Contents\net8` |
+| 2027 and newer | .NET 10 | `Contents\net10` |
+
+Windows marks downloaded files as blocked, and AutoCAD refuses to load a blocked DLL. Both installers clear that mark for you.
+
+## Step 2: Start AutoCAD
+
+Start AutoCAD. The command line shows:
+
+```
+LineGapChecker loaded. Commands:
+  GAPCHECK  Check lines, arcs and polylines: blue = needs extending, magenta = needs trimming
+  GAPSET    Set thresholds for this session
+  GAPRESET  Restore the original colours of objects marked by GAPCHECK
+```
+
+The commands work in every drawing, and the plugin loads by itself every time AutoCAD starts.
 
 ### If AutoCAD shows a security warning
 
-AutoCAD warns before loading code from a folder it doesn't trust (the `SECURELOAD` setting). Either:
+AutoCAD warns before it loads code from a folder it doesn't trust (the `SECURELOAD` setting). Either:
 - choose **Always Load** in the prompt, or
-- add the plugin folder to the trusted list: type `OPTIONS` → **Files** tab → **Trusted Locations** → **Add**. Then pick the folder that holds the DLL (for Option B, `%APPDATA%\Autodesk\ApplicationPlugins\LineGapChecker.bundle\Contents`).
+- add the plugin folder to the trusted list: type `OPTIONS` → **Files** tab → **Trusted Locations** → **Add**, and enter `%APPDATA%\Autodesk\ApplicationPlugins\LineGapChecker.bundle\Contents\...` (the `\...` at the end includes the subfolders).
+
+### Trying it without installing
+
+In AutoCAD, type `NETLOAD` and pick the `LineGapChecker.dll` for your version from the unzipped `LineGapChecker.bundle\Contents` folder. You have to do this again after every AutoCAD restart. If `NETLOAD` refuses the file, right-click it → **Properties** → tick **Unblock** → **OK**.
 
 ## Step 3: Check that it works
 
-1. Open a drawing that contains lines, arcs or polylines, or draw a quick test: one long horizontal line, and a vertical line that stops a little short of it.
+1. Open a drawing that contains lines, arcs or polylines. Or draw a quick test: one long horizontal line, and a vertical line that stops a little short of it.
 2. Type `GAPCHECK` and press **Enter** to check everything.
 3. Objects that stop short turn **blue**, and objects that stick out a little turn **magenta**. The command line prints a summary.
 4. Type `GAPRESET` to put the colours back.
@@ -99,27 +97,49 @@ Type `GAPSET`, pick an option, enter a new value, then press **Enter** to finish
 
 ## Updating to a new version
 
-1. Close AutoCAD. A loaded DLL is locked and can't be replaced.
-2. Get the new code and build again (Step 1).
-3. Run `install.bat` again, or `NETLOAD` the new DLL.
+Close AutoCAD, then run the same PowerShell line from Step 1 again, or the new zip's `install.bat`. Either one replaces the old version.
 
 ## Uninstalling
 
 1. In every drawing where objects are still coloured, run `GAPRESET`.
 2. Close AutoCAD.
-3. Run:
+3. Double-click `uninstall.bat` in the unzipped release folder, or run this in PowerShell:
    ```powershell
-   .\uninstall.bat
+   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/lumidren/Line-Gap-Checker/main/install.ps1))) -Uninstall
    ```
 
 If you only used `NETLOAD`, there's nothing to uninstall. The plugin is gone after an AutoCAD restart.
+
+## Building from source
+
+You only need this to change the code. The release zip is built by CI ([build.yml](.github/workflows/build.yml)) from the same steps.
+
+**All three builds**, with the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). No AutoCAD is needed, because the API comes from Autodesk's official [`AutoCAD.NET`](https://www.nuget.org/packages/AutoCAD.NET) NuGet packages:
+
+```powershell
+dotnet build LineGapChecker.csproj -c Release
+```
+
+This creates `bin\x64\Release\net48\`, `net8.0-windows\` and `net10.0-windows\`, each with a `LineGapChecker.dll`. Add `-f net8.0-windows` to build just one.
+
+**AutoCAD 2019 – 2024 only, without any SDK.** This uses the `csc.exe` that ships with Windows and the DLLs of your local AutoCAD:
+
+```powershell
+.\build.bat "C:\Program Files\Autodesk\AutoCAD 2024"
+```
+
+It runs the engine unit tests first, then creates `bin\LineGapChecker.dll`. To run only the tests, use `.\test.bat`.
+
+Then, with AutoCAD closed, run `.\install.bat` to install whatever you built.
 
 ## Troubleshooting
 
 | Problem | Cause and fix |
 |---|---|
-| `Unknown command "GAPCHECK"` | The plugin isn't loaded. Run `NETLOAD`, or check that `install.bat` ran while AutoCAD was closed. |
-| `NETLOAD` fails with "Cannot load assembly" | The DLL is blocked: Properties → **Unblock**. Or it's the wrong build for your version, since 2025+ needs the .NET 8 build. |
+| `Unknown command "GAPCHECK"` | The plugin isn't loaded. Check that the installer ran while AutoCAD was closed and printed "installed to". Then restart AutoCAD. |
+| The PowerShell line says "running scripts is disabled" | Run it in a new PowerShell window exactly as written: `irm ... \| iex` does not need a script file. Or use Option B. |
+| `NETLOAD` fails with "Cannot load assembly" | The DLL is blocked: Properties → **Unblock**. Or it's the wrong build for your version (see the table in Step 1). |
+| The installer says AutoCAD is running | Close every AutoCAD window, and check Task Manager for a leftover `acad.exe`. |
 | `build.bat` says the AutoCAD DLLs were not found | Wrong folder. Pass the folder that contains `acdbmgd.dll`. |
 | Nothing is flagged, but there are gaps | The gaps may be larger than the `Gap` limit, or the units may be wrong. Splines, ellipses and spline-fit polylines are not checked: the summary says how many objects were skipped. |
 | A whole polyline turned blue or magenta | A polyline is one object, so the whole thing is coloured. The coordinates in the summary show which end needs fixing. |
@@ -127,4 +147,4 @@ If you only used `NETLOAD`, there's nothing to uninstall. The plugin is gone aft
 | "flagged object(s) are on locked layers" | Locked objects are checked but not recoloured. Unlock the layer and run `GAPCHECK` again. |
 | `install.bat` says "Copy failed" | AutoCAD is open and holding the DLL. Close it and run the script again. |
 
-> **Status:** the geometry engine and the build and install scripts are tested. Loading inside AutoCAD has not been tested yet, because no AutoCAD was available while this was built. Please report anything that doesn't work as described.
+> **Status:** the geometry engine is unit-tested. CI compiles the plugin against Autodesk's API for AutoCAD 2019, 2025 and 2027, and tests both installers on the release zip. The plugin has not yet been run inside AutoCAD itself. Please report anything that doesn't work as described.
