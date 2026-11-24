@@ -15,9 +15,39 @@ When you draw in AutoCAD, lines often *look* connected but aren't. You only noti
 
 Objects that connect properly at corners, T-junctions and crossings are left alone. Your original colours are saved, so one command puts everything back.
 
+## Install
+
+Works with **full AutoCAD 2019 or newer** on 64-bit Windows. AutoCAD LT does not run plugins. No admin rights and no build tools are needed.
+
+**Option 1: one line.** Close AutoCAD, open **PowerShell** (Start menu → type `powershell`), paste this line and press Enter:
+
+```powershell
+irm https://raw.githubusercontent.com/lumidren/Line-Gap-Checker/main/install.ps1 | iex
+```
+
+**Option 2: download.** Get **`LineGapChecker.zip`** from the [latest release](https://github.com/lumidren/Line-Gap-Checker/releases/latest), unzip it, close AutoCAD and double-click **`install.bat`**.
+
+Then start AutoCAD and type `GAPCHECK`. If AutoCAD asks whether to load `LineGapChecker.dll`, choose **Always Load**. From now on the plugin loads by itself every time AutoCAD starts.
+
+Either way installs the same bundle into `%APPDATA%\Autodesk\ApplicationPlugins`. It holds three builds, and AutoCAD picks the one that matches its version:
+
+| AutoCAD | Runtime | Build |
+|---|---|---|
+| 2019 – 2024 | .NET Framework 4.8 | `net48` |
+| 2025 – 2026 | .NET 8 | `net8` |
+| 2027 and newer | .NET 10 | `net10` |
+
+**Update:** run the same line again, or the new zip's `install.bat`. **Remove:** run `GAPRESET` in any drawing that is still coloured, close AutoCAD, then run `uninstall.bat` from the zip, or:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/lumidren/Line-Gap-Checker/main/install.ps1))) -Uninstall
+```
+
+📘 Security prompts, units, settings and troubleshooting: **[INSTALL.md](INSTALL.md)**.
+
 ## How to use it
 
-1. **Load it.** In AutoCAD, type `NETLOAD` and pick `LineGapChecker.dll`. The command line lists the commands.
+1. **Start AutoCAD** with the plugin installed. The command line lists the commands. (To try it without installing, type `NETLOAD` and pick `LineGapChecker.dll`.)
 2. **Check.** Type `GAPCHECK`, then press **Enter** to check everything, or select only the objects you want. Problem objects turn blue or magenta, and the command line shows a summary like this:
    ```
    GAPCHECK: 1240 object(s) checked in 85 ms. Units: millimetres (INSUNITS=4).
@@ -57,18 +87,17 @@ The plugin reads the drawing's units from `INSUNITS` (mm, cm, m, km, in, ft, yd,
 - **A polyline is one object.** Only its two ends can be free: its corners never count as gaps. If it needs fixing, the whole polyline is coloured, and the summary gives the exact spot. A polyline can also stop short of, or run past, *itself*, for example a room outline whose last segment doesn't quite reach its first.
 - **Circles and closed polylines** have no ends, so they are never coloured. Other objects can still be extended to them.
 
-## Install / build
+## Build from source
 
-📘 **Full step-by-step guide: [INSTALL.md](INSTALL.md)**. It covers building, auto-loading on startup, security prompts, units, settings, updating, uninstalling and troubleshooting.
+You only need this to change the code. The release zip is built by CI from these same steps.
 
-Quick version: build the DLL, then run `install.bat` once (with AutoCAD closed) so the plugin loads automatically on every start.
+| Route | Command | Needs |
+|---|---|---|
+| All three builds | `dotnet build LineGapChecker.csproj -c Release` | [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). No AutoCAD: the API comes from Autodesk's official [`AutoCAD.NET`](https://www.nuget.org/packages/AutoCAD.NET) NuGet packages (2019, 2025 and 2027 versions). |
+| AutoCAD 2019 – 2024 only | `build.bat "C:\Program Files\Autodesk\AutoCAD 2024"` | Only the `csc.exe` that ships with Windows, plus a local AutoCAD for its DLLs |
+| Engine tests | `test.bat` | Only `csc.exe` |
 
-| AutoCAD version | Build |
-|---|---|
-| **2024 or older** (.NET Framework 4.8) | `build.bat "C:\Program Files\Autodesk\AutoCAD 2024"` produces `bin\LineGapChecker.dll` |
-| **2025 or newer** (.NET 8) | `dotnet build LineGapChecker.csproj -c Release -p:AcadDir="C:\Program Files\Autodesk\AutoCAD 2025"` |
-
-`build.bat` needs only the `csc.exe` that ships with Windows. It runs the unit tests first and builds the plugin only if they pass. The AutoCAD DLLs (`acdbmgd`, `accoremgd`, `acmgd`) are referenced, never copied.
+Both build routes run against the AutoCAD API assemblies without copying them: AutoCAD supplies its own at run time. `build.bat` runs the unit tests first and builds the plugin only if they pass. After building, `install.bat` installs whatever is in `bin\`.
 
 ---
 
@@ -81,10 +110,12 @@ Quick version: build the DLL, then run `install.bat` once (with AutoCAD closed) 
 | `src/GapEngine.cs` | Pure geometry engine. **No AutoCAD dependency**, so it can be unit-tested anywhere. |
 | `src/GapCommands.cs` | AutoCAD layer: `GAPCHECK`, `GAPSET`, `GAPRESET`, and `IExtensionApplication` |
 | `tests/GapEngineTests.cs` | Unit tests (a self-contained console runner, no NuGet) |
-| `test.bat` / `build.bat` / `LineGapChecker.csproj` | Build scripts for both AutoCAD generations |
-| `install.bat` / `uninstall.bat` / `bundle/PackageContents.xml` | Auto-load bundle: AutoCAD loads the plugin on every start |
+| `LineGapChecker.csproj` | Builds `net48`, `net8.0-windows` and `net10.0-windows` against Autodesk's NuGet API packages |
+| `test.bat` / `build.bat` | Engine tests, and an SDK-free `net48` build with Windows' own `csc.exe` |
+| `install.ps1` / `install.bat` / `uninstall.bat` / `bundle/` | Auto-load bundle and its installers: AutoCAD loads the plugin on every start |
+| `.github/workflows/build.yml` | CI: tests, all three builds, release zip, installer checks, and a GitHub release on each `v*` tag |
 
-The sources are written in **C# 5**, so the same files compile with the old Framework `csc.exe` and with the .NET 8 SDK.
+The sources are written in **C# 5**, so the same files compile with the old Framework `csc.exe` and with the .NET 8 and .NET 10 SDKs.
 
 ### Detection rules
 
@@ -137,7 +168,7 @@ From `test.bat` on a laptop:
 
 ### Verification status
 
-The geometry engine is compiled and fully unit-tested. The AutoCAD command layer (`GapCommands.cs`) has been compiled against stand-ins that copy the AutoCAD .NET API signatures, but **has not yet been run inside AutoCAD**. Treat the first real-drawing run as the acceptance test:
+The geometry engine is compiled and fully unit-tested. On every push, CI compiles the AutoCAD command layer (`GapCommands.cs`) against Autodesk's official API assemblies for AutoCAD 2019, 2025 and 2027. CI also installs the release zip with both installers and checks the result. The plugin **has not yet been run inside AutoCAD**, so treat the first real-drawing run as the acceptance test:
 
 1. Draw a T with a 50 mm gap, a 4 mm overshoot, a 3 mm line, a clean corner, and a green or true-colour line. Add an arc that stops 30 mm short of a line, a polyline with an arc segment that runs 4 mm past a wall, and one arc and one polyline mirrored with `MIRROR3D` (normal −Z).
 2. Run `GAPCHECK` and check the colours and the summary, including the mirrored objects.
