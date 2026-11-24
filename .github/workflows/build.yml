@@ -26,5 +26,80 @@ jobs:
       - name: Build plugin for AutoCAD 2019-2024, 2025-2026 and 2027+
         run: dotnet build LineGapChecker.csproj -c Release
 
-      - name: Show build output
-        run: Get-ChildItem bin\x64\Release -Recurse -Filter LineGapChecker.dll | Select-Object FullName, Length
+      - name: Package release zip
+        run: |
+          $out = 'dist\LineGapChecker'
+          $b = "$out\LineGapChecker.bundle"
+          foreach ($pair in @(@('net48','net48'), @('net8.0-windows','net8'), @('net10.0-windows','net10'))) {
+            New-Item -ItemType Directory -Force "$b\Contents\$($pair[1])" | Out-Null
+            Copy-Item "bin\x64\Release\$($pair[0])\LineGapChecker.dll" "$b\Contents\$($pair[1])\"
+          }
+          Copy-Item bundle\PackageContents.xml $b
+          Copy-Item install.bat, uninstall.bat, install.ps1, bundle\README.txt $out
+          Compress-Archive -Path "$out\*" -DestinationPath dist\LineGapChecker.zip
+          Get-ChildItem $out -Recurse -File | ForEach-Object { '{0,8}  {1}' -f $_.Length, $_.FullName.Substring((Resolve-Path $out).Path.Length + 1) }
+
+      - name: Check install.bat from the unzipped release
+        shell: cmd
+        run: |
+          mkdir "%RUNNER_TEMP%\unzipped"
+          powershell -NoProfile -Command "Expand-Archive dist\LineGapChecker.zip $env:RUNNER_TEMP\unzipped"
+          call "%RUNNER_TEMP%\unzipped\install.bat" "%RUNNER_TEMP%\plugins-bat" || exit /b 1
+          for %%n in (net48 net8 net10) do if not exist "%RUNNER_TEMP%\plugins-bat\LineGapChecker.bundle\Contents\%%n\LineGapChecker.dll" exit /b 1
+          call "%RUNNER_TEMP%\unzipped\uninstall.bat" "%RUNNER_TEMP%\plugins-bat" || exit /b 1
+          if exist "%RUNNER_TEMP%\plugins-bat\LineGapChecker.bundle" exit /b 1
+
+      - name: Check install.ps1 with the release zip
+        shell: powershell
+        run: |
+          $t = "$env:RUNNER_TEMP\plugins-ps"
+          .\install.ps1 -ZipPath dist\LineGapChecker.zip -Target $t
+          foreach ($n in 'net48','net8','net10') {
+            if (-not (Test-Path "$t\LineGapChecker.bundle\Contents\$n\LineGapChecker.dll")) { throw "missing $n" }
+          }
+          [xml](Get-Content "$t\LineGapChecker.bundle\PackageContents.xml" -Raw) | Out-Null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LineGapChecker
+          path: dist/LineGapChecker.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: LineGapChecker
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" LineGapChecker.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Line Gap Checker $GITHUB_REF_NAME" \
+            --notes "Ready-made plugin for AutoCAD 2019 and newer. Close AutoCAD, then in PowerShell run:
+
+          \`\`\`powershell
+          irm https://raw.githubusercontent.com/lumidren/Line-Gap-Checker/main/install.ps1 | iex
+          \`\`\`
+
+          Or download **LineGapChecker.zip**, unzip it and double-click **install.bat**. The zip holds builds for AutoCAD 2019-2024 (.NET Framework 4.8), 2025-2026 (.NET 8) and 2027+ (.NET 10); AutoCAD loads the matching one."
+
+  verify-release:
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - name: Run the one-line installer exactly as a user would
+        shell: powershell
+        run: |
+          $env:APPDATA = "$env:RUNNER_TEMP\appdata"
+          irm https://raw.githubusercontent.com/lumidren/Line-Gap-Checker/main/install.ps1 | iex
+          $b = "$env:APPDATA\Autodesk\ApplicationPlugins\LineGapChecker.bundle"
+          foreach ($n in 'net48','net8','net10') {
+            if (-not (Test-Path "$b\Contents\$n\LineGapChecker.dll")) { throw "missing $n" }
+          }
+          Write-Host 'One-line install works.'
