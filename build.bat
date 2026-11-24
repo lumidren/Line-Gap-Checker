@@ -6,7 +6,7 @@ rem
 rem  Usage:  build.bat ["C:\Program Files\Autodesk\AutoCAD 2024"]
 rem  The AutoCAD folder can also be set in the ACAD_DIR environment variable.
 rem
-rem  AutoCAD 2025 and newer run on .NET 8: use LineGapChecker.csproj instead
+rem  AutoCAD 2025 and newer run on .NET 8 or .NET 10: use LineGapChecker.csproj instead
 rem  (see README.md).
 rem ---------------------------------------------------------------------------
 setlocal
