@@ -1,0 +1,30 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Engine unit tests
+        shell: cmd
+        run: test.bat
+
+      - name: Build plugin for AutoCAD 2019-2024, 2025-2026 and 2027+
+        run: dotnet build LineGapChecker.csproj -c Release
+
+      - name: Show build output
+        run: Get-ChildItem bin\x64\Release -Recurse -Filter LineGapChecker.dll | Select-Object FullName, Length
