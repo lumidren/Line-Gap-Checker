@@ -1,7 +1,10 @@
 // GapCommands.cs - AutoCAD command layer for LineGapChecker.
 //
-// Commands: GAPCHECK, GAPSET, GAPRESET. All geometry work is in GapEngine.cs.
-// Checks LINE, ARC, CIRCLE, LWPOLYLINE and simple 2D/3D POLYLINE objects.
+// Commands: GAPCHECK, GAPSET, GAPCLEAR (GAPRESET is kept as another name for GAPCLEAR).
+// All geometry work is in GapEngine.cs.
+// Checks LINE, ARC, CIRCLE, LWPOLYLINE and simple 2D/3D POLYLINE objects, and marks every
+// gap and overshoot with a green circle drawn as transient graphics, the way HATCH marks the
+// gaps of a boundary it can't close with red circles. Nothing is written to the drawing.
 // Written in C# 5 so it builds with the .NET Framework csc.exe (AutoCAD 2024 and older)
 // as well as with the net8.0-windows SDK project (AutoCAD 2025 and newer).
 //
@@ -20,6 +23,8 @@ using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using AcApp = Autodesk.AutoCAD.ApplicationServices.Application;
+// Not imported whole: GraphicsInterface has its own Polyline type.
+using Gi = Autodesk.AutoCAD.GraphicsInterface;
 
 [assembly: ExtensionApplication(typeof(LineGapChecker.GapPlugin))]
 [assembly: CommandClass(typeof(LineGapChecker.GapCommands))]
@@ -40,10 +45,139 @@ namespace LineGapChecker
             {
                 // Never let a message failure stop the plugin from loading.
             }
+            GapMarkers.Hook();
         }
 
         public void Terminate()
         {
+        }
+    }
+
+    /// <summary>
+    /// The green circles GAPCHECK draws, per drawing. They are transient graphics: drawn on
+    /// screen only, never saved, unaffected by UNDO, and kept the same size on screen when
+    /// the user zooms. GAPCHECK replaces them, GAPCLEAR removes them.
+    /// </summary>
+    internal static class GapMarkers
+    {
+        private const short GreenAci = 3;
+        /// <summary>Circle radius as a fraction of the view height (VIEWSIZE).</summary>
+        private const double RadiusOfView = 1.0 / 50;
+
+        private static readonly Dictionary<Document, List<Circle>> shown = new Dictionary<Document, List<Circle>>();
+        private static bool hooked;
+
+        public static void Hook()
+        {
+            if (hooked) return;
+            hooked = true;
+            try
+            {
+                AcApp.SystemVariableChanged += OnSystemVariableChanged;
+                AcApp.DocumentManager.DocumentToBeDestroyed += OnDocumentToBeDestroyed;
+            }
+            catch (System.Exception)
+            {
+                // Without the events the circles simply keep their first size.
+            }
+        }
+
+        public static int Count(Document doc)
+        {
+            List<Circle> list;
+            return doc != null && shown.TryGetValue(doc, out list) ? list.Count : 0;
+        }
+
+        /// <summary>Replaces this drawing's circles with one at each point.</summary>
+        public static void Show(Document doc, IList<Point3d> centres)
+        {
+            Clear(doc);
+            if (centres.Count == 0) return;
+            Hook();
+            double r = CurrentRadius();
+            Gi.TransientManager tm = Gi.TransientManager.CurrentTransientManager;
+            IntegerCollection allViewports = new IntegerCollection();
+            List<Circle> list = new List<Circle>(centres.Count);
+            foreach (Point3d c in centres)
+            {
+                Circle circle = new Circle(c, Vector3d.ZAxis, r);
+                circle.ColorIndex = GreenAci;
+                tm.AddTransient(circle, Gi.TransientDrawingMode.DirectTopmost, 128, allViewports);
+                list.Add(circle);
+            }
+            shown[doc] = list;
+        }
+
+        /// <summary>Removes this drawing's circles. Returns how many there were.</summary>
+        public static int Clear(Document doc)
+        {
+            List<Circle> list;
+            if (doc == null || !shown.TryGetValue(doc, out list)) return 0;
+            shown.Remove(doc);
+            bool active = doc == AcApp.DocumentManager.MdiActiveDocument;
+            Gi.TransientManager tm = active ? Gi.TransientManager.CurrentTransientManager : null;
+            IntegerCollection allViewports = new IntegerCollection();
+            foreach (Circle circle in list)
+            {
+                try
+                {
+                    if (tm != null) tm.EraseTransient(circle, allViewports);
+                    circle.Dispose();
+                }
+                catch (System.Exception)
+                {
+                    // A drawing that is closing may already have dropped its graphics.
+                }
+            }
+            return list.Count;
+        }
+
+        private static double CurrentRadius()
+        {
+            double viewSize = 0;
+            try
+            {
+                viewSize = Convert.ToDouble(AcApp.GetSystemVariable("VIEWSIZE"), CultureInfo.InvariantCulture);
+            }
+            catch (System.Exception)
+            {
+            }
+            return viewSize > 0 ? viewSize * RadiusOfView : 1.0;
+        }
+
+        /// <summary>VIEWSIZE changes on every zoom: resize the circles to keep them readable.</summary>
+        private static void OnSystemVariableChanged(object sender, Autodesk.AutoCAD.ApplicationServices.SystemVariableChangedEventArgs e)
+        {
+            try
+            {
+                if (!string.Equals(e.Name, "VIEWSIZE", StringComparison.OrdinalIgnoreCase)) return;
+                Document doc = AcApp.DocumentManager.MdiActiveDocument;
+                List<Circle> list;
+                if (doc == null || !shown.TryGetValue(doc, out list) || list.Count == 0) return;
+                double r = CurrentRadius();
+                Gi.TransientManager tm = Gi.TransientManager.CurrentTransientManager;
+                IntegerCollection allViewports = new IntegerCollection();
+                foreach (Circle circle in list)
+                {
+                    circle.Radius = r;
+                    tm.UpdateTransient(circle, allViewports);
+                }
+            }
+            catch (System.Exception)
+            {
+                // Resizing is a convenience: never let it disturb a zoom.
+            }
+        }
+
+        private static void OnDocumentToBeDestroyed(object sender, DocumentCollectionEventArgs e)
+        {
+            try
+            {
+                Clear(e.Document);
+            }
+            catch (System.Exception)
+            {
+            }
         }
     }
 
@@ -71,17 +205,18 @@ namespace LineGapChecker
 
     public sealed class GapCommands
     {
+        /// <summary>
+        /// XData app that version 1.x used to save original colours when it recoloured objects.
+        /// Still read so that drawings checked with 1.x get their colours back.
+        /// </summary>
         internal const string AppName = "LINEGAPCHECK";
-        private const short XDataVersion = 1;
-        private const short BlueAci = 5;
-        private const short MagentaAci = 6;
         private const int MaxListed = 30;
 
         internal const string HelpText =
             "\nLineGapChecker loaded. Commands:" +
-            "\n  GAPCHECK  Check lines, arcs and polylines: blue = needs extending, magenta = needs trimming" +
+            "\n  GAPCHECK  Check lines, arcs and polylines: a green circle marks every spot to extend or trim" +
             "\n  GAPSET    Set thresholds for this session" +
-            "\n  GAPRESET  Restore the original colours of objects marked by GAPCHECK\n";
+            "\n  GAPCLEAR  Remove the green circles\n";
 
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
@@ -95,7 +230,7 @@ namespace LineGapChecker
             Editor ed = doc.Editor;
             try
             {
-                RunCheck(doc.Database, ed);
+                RunCheck(doc, ed);
             }
             catch (System.Exception ex)
             {
@@ -103,8 +238,9 @@ namespace LineGapChecker
             }
         }
 
-        private static void RunCheck(Database db, Editor ed)
+        private static void RunCheck(Document doc, Editor ed)
         {
+            Database db = doc.Database;
             string unitText;
             double upm = ResolveUnitsPerMetre(db, ed, out unitText);
 
@@ -116,27 +252,23 @@ namespace LineGapChecker
             Stopwatch sw = Stopwatch.StartNew();
             GapResult result;
             ObjectCounts counts = new ObjectCounts();
-            int restored, restoreSkipped, lockedSkipped = 0;
+            int restored, restoreSkipped;
 
             using (Transaction tr = db.TransactionManager.StartTransaction())
             {
-                LayerLockCache locks = new LayerLockCache(tr);
-
-                // 1. Undo the previous run so results never stack.
-                RestoreMarked(tr, db, locks, out restored, out restoreSkipped);
+                // 1. Put back colours left by version 1.x, which recoloured objects instead of
+                //    drawing circles. Does nothing in drawings that 1.x never touched.
+                RestoreMarked(tr, db, new LayerLockCache(tr), out restored, out restoreSkipped);
 
                 // 2. Read the geometry (objects stay open for read only).
                 ObjectId[] ids = selectAll ? AllCandidatesInCurrentSpace(tr, db) : picked;
-                List<Entity> entities = new List<Entity>(ids.Length);
                 List<GapCurve> curves = new List<GapCurve>(ids.Length);
                 for (int i = 0; i < ids.Length; i++)
                 {
                     Entity ent = tr.GetObject(ids[i], OpenMode.ForRead) as Entity;
                     if (ent == null) continue;
                     GapCurve curve = ToCurve(tr, ent, counts);
-                    if (curve == null) continue;
-                    entities.Add(ent);
-                    curves.Add(curve);
+                    if (curve != null) curves.Add(curve);
                 }
 
                 // 3. Analyse.
@@ -144,30 +276,22 @@ namespace LineGapChecker
                     GapSettings.ShortLengthM, GapSettings.MaxGapM, GapSettings.TouchTolM, upm);
                 result = GapEngine.Analyze(curves.ToArray(), opt);
 
-                // 4. Colour. Upgrade to write only for objects that change.
-                if (result.ExtendCount + result.TrimCount > 0) EnsureRegApp(tr, db);
-                for (int i = 0; i < entities.Count; i++)
-                {
-                    LineMark mark = result.MarkOf(i);
-                    if (mark == LineMark.None) continue;
-                    Entity ent = entities[i];
-                    if (locks.IsLocked(ent.LayerId) || !TryUpgradeOpen(ent))
-                    {
-                        lockedSkipped++;
-                        continue;
-                    }
-                    // An object still carrying our XData (it was on a locked layer during the
-                    // restore) already holds its true original colour: keep that one.
-                    if (!HasMarkXData(ent)) SaveOriginalColor(ent);
-                    ent.ColorIndex = mark == LineMark.Trim ? MagentaAci : BlueAci;
-                }
-
                 tr.Commit();
             }
+
+            // 4. One green circle per problem spot. Two findings at the same point share one.
+            List<Point3d> centres = new List<Point3d>(result.Findings.Count);
+            HashSet<string> seen = new HashSet<string>();
+            foreach (GapFinding f in result.Findings)
+            {
+                if (seen.Add(f.X.ToString("R", Inv) + "," + f.Y.ToString("R", Inv)))
+                    centres.Add(new Point3d(f.X, f.Y, 0));
+            }
+            GapMarkers.Show(doc, centres);
             sw.Stop();
 
-            PrintSummary(ed, result, upm, unitText, counts,
-                         restored, restoreSkipped, lockedSkipped, sw.ElapsedMilliseconds);
+            PrintSummary(ed, result, upm, unitText, counts, centres.Count,
+                         restored, restoreSkipped, sw.ElapsedMilliseconds);
         }
 
         /// <summary>Object types GAPCHECK reads, as DXF names (also the selection filter).</summary>
@@ -365,9 +489,16 @@ namespace LineGapChecker
         }
 
         private static void PrintSummary(Editor ed, GapResult r, double upm, string unitText,
-                                         ObjectCounts counts, int restored,
-                                         int restoreSkipped, int lockedSkipped, long ms)
+                                         ObjectCounts counts, int circles, int restored,
+                                         int restoreSkipped, long ms)
         {
+            int extendSpots = 0, trimSpots = 0;
+            foreach (GapFinding f in r.Findings)
+            {
+                if (f.IsTrim) trimSpots++;
+                else extendSpots++;
+            }
+
             StringBuilder sb = new StringBuilder();
             sb.Append("\n\nGAPCHECK: ").Append(counts.Checked).Append(" object(s) checked in ")
               .Append(ms).Append(" ms. Units: ").Append(unitText).Append('.');
@@ -379,20 +510,20 @@ namespace LineGapChecker
             sb.Append("\n  Thresholds: short/overshoot ").Append(Num(GapSettings.ShortLengthM))
               .Append(" m, max gap ").Append(Num(GapSettings.MaxGapM))
               .Append(" m, touch tolerance ").Append(Num(GapSettings.TouchTolM)).Append(" m.");
-            sb.Append("\n  To extend (blue):   ").Append(r.ExtendCount);
-            sb.Append("\n  To trim (magenta):  ").Append(r.TrimCount);
-            if (r.BothCount > 0)
-                sb.Append("   (").Append(r.BothCount)
-                  .Append(" of these also need extending; they are coloured magenta)");
+            sb.Append("\n  To extend:  ").Append(extendSpots).Append(" spot(s)");
+            sb.Append("\n  To trim:    ").Append(trimSpots).Append(" spot(s)");
+            if (circles > 0)
+                sb.Append("\n  Marked with ").Append(circles)
+                  .Append(" green circle(s). Fix them, then run GAPCHECK again. GAPCLEAR removes the circles.");
+            else if (counts.Checked > 0)
+                sb.Append("\n  No gaps or overshoots found.");
 
             if (restored > 0)
-                sb.Append("\n  ").Append(restored).Append(" object(s) from the previous run were restored first.");
+                sb.Append("\n  ").Append(restored)
+                  .Append(" object(s) coloured by an older version of this plugin got their original colour back.");
             if (restoreSkipped > 0)
                 sb.Append("\n  ").Append(restoreSkipped)
-                  .Append(" marked object(s) on locked layers could not be restored.");
-            if (lockedSkipped > 0)
-                sb.Append("\n  ").Append(lockedSkipped)
-                  .Append(" flagged object(s) are on locked layers and were not recoloured. Unlock and run GAPCHECK again.");
+                  .Append(" object(s) coloured by an older version are on locked layers. Unlock them and run GAPCLEAR.");
             if (counts.Skipped > 0)
                 sb.Append("\n  ").Append(counts.Skipped)
                   .Append(" object(s) were skipped: spline- or curve-fit polylines, meshes, or objects not drawn flat in the XY plane.");
@@ -506,8 +637,20 @@ namespace LineGapChecker
 
         // ------------------------------------------------------------------ GAPRESET
 
+        [CommandMethod("GAPCLEAR", CommandFlags.Modal)]
+        public void GapClear()
+        {
+            ClearCommand("GAPCLEAR");
+        }
+
+        /// <summary>The 1.x name of GAPCLEAR, kept so old habits and scripts still work.</summary>
         [CommandMethod("GAPRESET", CommandFlags.Modal)]
         public void GapReset()
+        {
+            ClearCommand("GAPRESET");
+        }
+
+        private static void ClearCommand(string name)
         {
             Document doc = AcApp.DocumentManager.MdiActiveDocument;
             if (doc == null) return;
@@ -515,20 +658,23 @@ namespace LineGapChecker
             Database db = doc.Database;
             try
             {
+                int removed = GapMarkers.Clear(doc);
                 int restored, skipped;
                 using (Transaction tr = db.TransactionManager.StartTransaction())
                 {
                     RestoreMarked(tr, db, new LayerLockCache(tr), out restored, out skipped);
                     tr.Commit();
                 }
-                string msg = "\nGAPRESET: " + restored + " object(s) restored to their original colour.";
+                string msg = "\n" + name + ": " + removed + " green circle(s) removed.";
+                if (restored > 0)
+                    msg += "\n  " + restored + " object(s) coloured by an older version of this plugin got their original colour back.";
                 if (skipped > 0)
-                    msg += "\n  " + skipped + " marked object(s) are on locked layers and were left as they are. Unlock and run GAPRESET again.";
+                    msg += "\n  " + skipped + " object(s) coloured by an older version are on locked layers. Unlock them and run " + name + " again.";
                 Print(ed, msg + "\n");
             }
             catch (System.Exception ex)
             {
-                Print(ed, "\nGAPRESET failed: " + ex.Message + "\n");
+                Print(ed, "\n" + name + " failed: " + ex.Message + "\n");
             }
         }
 
@@ -536,7 +682,7 @@ namespace LineGapChecker
 
         /// <summary>
         /// Restores every line, arc, circle and polyline in model space and all layouts that
-        /// carries our XData. Objects on locked layers are left unchanged (and keep their XData).
+        /// version 1.x recoloured (it carries that version's XData). Objects on locked layers are left unchanged (and keep their XData).
         /// </summary>
         private static void RestoreMarked(Transaction tr, Database db, LayerLockCache locks,
                                           out int restored, out int skipped)
@@ -578,38 +724,10 @@ namespace LineGapChecker
             }
         }
 
-        private static bool HasMarkXData(Entity ent)
-        {
-            using (ResultBuffer rb = ent.GetXDataForApplication(AppName))
-            {
-                return rb != null;
-            }
-        }
-
         /// <summary>
-        /// XData layout: 1001 app, 1070 version, 1071 colour method, 1070 ACI index,
-        /// 1071 RGB (0xRRGGBB), 1000 "book|name" for colour-book colours or "-".
+        /// Rebuilds a colour from the XData that version 1.x wrote: 1001 app, 1070 version,
+        /// 1071 colour method, 1070 ACI index, 1071 RGB (0xRRGGBB), 1000 "book|name" or "-".
         /// </summary>
-        private static void SaveOriginalColor(Entity ent)
-        {
-            Color c = ent.Color;
-            int rgb = (c.Red << 16) | (c.Green << 8) | c.Blue;
-            string names = "-";
-            if (c.ColorMethod == ColorMethod.ByColor && !string.IsNullOrEmpty(c.BookName))
-                names = c.BookName + "|" + c.ColorName;
-
-            using (ResultBuffer rb = new ResultBuffer(
-                new TypedValue((int)DxfCode.ExtendedDataRegAppName, AppName),
-                new TypedValue((int)DxfCode.ExtendedDataInteger16, XDataVersion),
-                new TypedValue((int)DxfCode.ExtendedDataInteger32, (int)c.ColorMethod),
-                new TypedValue((int)DxfCode.ExtendedDataInteger16, c.ColorIndex),
-                new TypedValue((int)DxfCode.ExtendedDataInteger32, rgb),
-                new TypedValue((int)DxfCode.ExtendedDataAsciiString, names)))
-            {
-                ent.XData = rb;
-            }
-        }
-
         private static Color ColorFromXData(TypedValue[] v)
         {
             try
@@ -655,17 +773,6 @@ namespace LineGapChecker
         private static Color ByLayer()
         {
             return Color.FromColorIndex(ColorMethod.ByLayer, 256);
-        }
-
-        private static void EnsureRegApp(Transaction tr, Database db)
-        {
-            RegAppTable rat = (RegAppTable)tr.GetObject(db.RegAppTableId, OpenMode.ForRead);
-            if (rat.Has(AppName)) return;
-            rat.UpgradeOpen();
-            RegAppTableRecord rec = new RegAppTableRecord();
-            rec.Name = AppName;
-            rat.Add(rec);
-            tr.AddNewlyCreatedDBObject(rec, true);
         }
 
         /// <summary>Upgrades a read-open object to write. Returns false if its layer is locked.</summary>
