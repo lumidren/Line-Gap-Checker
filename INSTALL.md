@@ -64,7 +64,7 @@ AutoCAD warns before it loads code from a folder it doesn't trust (the `SECURELO
 
 ### Trying it without installing
 
-In AutoCAD, type `NETLOAD` and pick the `LineGapChecker.dll` for your version from the unzipped `LineGapChecker.bundle\Contents` folder. You have to do this again after every AutoCAD restart. If `NETLOAD` refuses the file, right-click it → **Properties** → tick **Unblock** → **OK**.
+Download the single DLL for your version from the [latest release](https://github.com/lumidren/Line-Gap-Checker/releases/latest): `LineGapChecker-AutoCAD-2019-2024.dll`, `LineGapChecker-AutoCAD-2025-2026.dll` or `LineGapChecker-AutoCAD-2027.dll`. Or use the `LineGapChecker.dll` for your version from the unzipped `LineGapChecker.bundle\Contents` folder. Then in AutoCAD, type `NETLOAD` and pick it. You have to do this again after every AutoCAD restart. If `NETLOAD` refuses the file, right-click it → **Properties** → tick **Unblock** → **OK**.
 
 ## Step 3: Check that it works
 
