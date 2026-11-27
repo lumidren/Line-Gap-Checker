@@ -49,9 +49,9 @@ Start AutoCAD. The command line shows:
 
 ```
 LineGapChecker loaded. Commands:
-  GAPCHECK  Check lines, arcs and polylines: blue = needs extending, magenta = needs trimming
+  GAPCHECK  Check lines, arcs and polylines: a green circle marks every spot to extend or trim
   GAPSET    Set thresholds for this session
-  GAPRESET  Restore the original colours of objects marked by GAPCHECK
+  GAPCLEAR  Remove the green circles
 ```
 
 The commands work in every drawing, and the plugin loads by itself every time AutoCAD starts.
@@ -88,8 +88,9 @@ A two-minute test in a new drawing:
    - a wall that stops 50 mm short of the floor: `300,50` to `300,600`
    - a wall that runs 4 mm past the floor: `700,-4` to `700,600`
 3. Type `GAPCHECK` and press **Enter** twice.
-4. The first wall turns **blue** (`EXTEND to line 0.0500 m`) and the second turns **magenta** (`TRIM overshoot 0.0040 m`). The floor stays as it is.
-5. Type `GAPRESET`. Both walls get their original colour back.
+4. Two **green circles** appear: one at `300,50`, where the first wall stops short (`EXTEND to line 0.0500 m`), and one at `700,-4`, where the second wall sticks out (`TRIM overshoot 0.0040 m`). The floor gets none.
+5. Zoom in and out. The circles stay the same size on screen.
+6. Type `GAPCLEAR`. Both circles disappear, and the lines are exactly as you drew them.
 
 How to use the plugin day to day is in the README, under [How to use it](README.md#how-to-use-it).
 
@@ -121,9 +122,8 @@ Close AutoCAD, then run the same PowerShell line from Step 1 again, or the new z
 
 ## Uninstalling
 
-1. In every drawing where objects are still coloured, run `GAPRESET`.
-2. Close AutoCAD.
-3. Double-click `uninstall.bat` in the unzipped release folder, or run this in PowerShell:
+1. Close AutoCAD. The green circles are never saved, so there's nothing to clean up in your drawings.
+2. Double-click `uninstall.bat` in the unzipped release folder, or run this in PowerShell:
    ```powershell
    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/lumidren/Line-Gap-Checker/main/install.ps1))) -Uninstall
    ```
@@ -161,10 +161,11 @@ Then, with AutoCAD closed, run `.\install.bat` to install whatever you built.
 | `NETLOAD` fails with "Cannot load assembly" | The DLL is blocked: Properties → **Unblock**. Or it's the wrong build for your version (see the table in Step 1). |
 | The installer says AutoCAD is running | Close every AutoCAD window, and check Task Manager for a leftover `acad.exe`. |
 | `build.bat` says the AutoCAD DLLs were not found | Wrong folder. Pass the folder that contains `acdbmgd.dll`. |
-| Nothing is flagged, but there are gaps | The gaps may be larger than the `Gap` limit, or the units may be wrong. Splines, ellipses and spline-fit polylines are not checked: the summary says how many objects were skipped. |
-| A whole polyline turned blue or magenta | A polyline is one object, so the whole thing is coloured. The coordinates in the summary show which end needs fixing. |
-| Far too many lines are flagged | The units are probably wrong. Check `UNITS` → Insertion scale. |
-| "flagged object(s) are on locked layers" | Locked objects are checked but not recoloured. Unlock the layer and run `GAPCHECK` again. |
+| No green circles, but there are gaps | The gaps may be larger than the `Gap` limit, or the units may be wrong. Splines, ellipses and spline-fit polylines are not checked: the summary says how many objects were skipped. |
+| Far too many circles | The units are probably wrong. Check `UNITS` → Insertion scale. |
+| The summary lists findings but I can't see the circles | Zoom out (`ZOOM` → `E`), or jump to a finding's point with `ZOOM` → `C`. The circles only show in the drawing where `GAPCHECK` ran. |
+| Circles are still there after I fixed the lines | They don't follow edits. Run `GAPCHECK` again to refresh them, or `GAPCLEAR` to remove them. |
+| Objects are blue or magenta from an older version | Version 1 recoloured objects. Run `GAPCLEAR` once in that drawing to get the original colours back. Objects on locked layers need the layer unlocked first. |
 | `install.bat` says "Copy failed" | AutoCAD is open and holding the DLL. Close it and run the script again. |
 
 > **Status:** the geometry engine is unit-tested. CI compiles the plugin against Autodesk's API for AutoCAD 2019, 2025 and 2027, and tests both installers on the release zip. The plugin has not yet been run inside AutoCAD itself. Please report anything that doesn't work as described.
