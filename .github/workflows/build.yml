@@ -37,6 +37,11 @@ jobs:
           Copy-Item bundle\PackageContents.xml $b
           Copy-Item install.bat, uninstall.bat, install.ps1, bundle\README.txt $out
           Compress-Archive -Path "$out\*" -DestinationPath dist\LineGapChecker.zip
+          # The same DLLs on their own, for NETLOAD or for sharing a single file.
+          Copy-Item bin\x64\Release\net48\LineGapChecker.dll dist\LineGapChecker-AutoCAD-2019-2024.dll
+          Copy-Item bin\x64\Release\net8.0-windows\LineGapChecker.dll dist\LineGapChecker-AutoCAD-2025-2026.dll
+          Copy-Item bin\x64\Release\net10.0-windows\LineGapChecker.dll dist\LineGapChecker-AutoCAD-2027.dll
+          Get-ChildItem dist -File | ForEach-Object { '{0,8}  {1}' -f $_.Length, $_.Name }
           Get-ChildItem $out -Recurse -File | ForEach-Object { '{0,8}  {1}' -f $_.Length, $_.FullName.Substring((Resolve-Path $out).Path.Length + 1) }
 
       - name: Check install.bat from the unzipped release
@@ -62,7 +67,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: LineGapChecker
-          path: dist/LineGapChecker.zip
+          path: |
+            dist/LineGapChecker.zip
+            dist/LineGapChecker-AutoCAD-*.dll
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -78,7 +85,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" LineGapChecker.zip \
+          ls -l
+          gh release create "$GITHUB_REF_NAME" LineGapChecker.zip LineGapChecker-AutoCAD-*.dll \
             --repo "$GITHUB_REPOSITORY" \
             --title "Line Gap Checker $GITHUB_REF_NAME" \
             --notes "Ready-made plugin for AutoCAD 2019 and newer. Close AutoCAD, then in PowerShell run:
@@ -87,7 +95,9 @@ jobs:
           irm https://raw.githubusercontent.com/lumidren/Line-Gap-Checker/main/install.ps1 | iex
           \`\`\`
 
-          Or download **LineGapChecker.zip**, unzip it and double-click **install.bat**. The zip holds builds for AutoCAD 2019-2024 (.NET Framework 4.8), 2025-2026 (.NET 8) and 2027+ (.NET 10); AutoCAD loads the matching one."
+          Or download **LineGapChecker.zip**, unzip it and double-click **install.bat**. The zip holds builds for AutoCAD 2019-2024 (.NET Framework 4.8), 2025-2026 (.NET 8) and 2027+ (.NET 10); AutoCAD loads the matching one.
+
+          The three **LineGapChecker-AutoCAD-*.dll** files are the same builds on their own. Pick the one for your AutoCAD version and load it with NETLOAD (right-click → Properties → Unblock first)."
 
   verify-release:
     needs: release
