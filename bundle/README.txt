@@ -20,14 +20,16 @@ USE
   1. Type UNITS and check that Insertion scale matches the drawing
      (Millimeters, Meters, ...). Limits are in real metres.
   2. Type GAPCHECK, press Enter to check everything (or select objects first).
-       blue    = stops short: EXTEND it (gaps up to 10 cm)
-       magenta = sticks out:  TRIM it (overshoots up to 5 mm), or ERASE a tiny stray bit
+     A green circle appears on every spot to fix, like the red circles HATCH
+     shows around a gap:
+       an end that stops short  -> EXTEND it (gaps up to 10 cm)
+       an end that sticks out   -> TRIM it (overshoots up to 5 mm)
+       a tiny stray object      -> ERASE it
      The command line lists each finding with its size and position.
-  3. Fix, then run GAPCHECK again until nothing is flagged.
-  4. Type GAPRESET to put the original colours back.
-  GAPSET changes the limits for this AutoCAD session.
-  One UNDO right after GAPCHECK reverses the whole check.
+  3. Fix, then run GAPCHECK again until no circles are left.
+  4. Type GAPCLEAR to remove the circles.
+  The circles are only drawn on screen: nothing in the drawing is changed
+  and they are never saved. GAPSET changes the limits for this session.
 
 REMOVE
-  Run GAPRESET in any drawing that is still coloured, close AutoCAD,
-  then double-click uninstall.bat.
+  Close AutoCAD, then double-click uninstall.bat.
