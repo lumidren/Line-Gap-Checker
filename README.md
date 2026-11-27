@@ -17,40 +17,70 @@ Objects that connect properly at corners, T-junctions and crossings are left alo
 
 ## Install
 
-Works with **full AutoCAD 2019 or newer** on 64-bit Windows. AutoCAD LT does not run plugins. No admin rights and no build tools are needed.
+**You need:** full AutoCAD 2019 or newer on 64-bit Windows. AutoCAD LT can't run plugins. You don't need admin rights or any build tools.
 
-**Option 1: one line.** Close AutoCAD, open **PowerShell** (Start menu → type `powershell`), paste this line and press Enter:
+Pick one of the two ways below. All downloads are on the [latest release page](https://github.com/lumidren/Line-Gap-Checker/releases/latest).
 
-```powershell
-irm https://raw.githubusercontent.com/lumidren/Line-Gap-Checker/main/install.ps1 | iex
-```
+### Way 1: install once, loads on every start (recommended)
 
-**Option 2: download.** Get **`LineGapChecker.zip`** from the [latest release](https://github.com/lumidren/Line-Gap-Checker/releases/latest), unzip it, close AutoCAD and double-click **`install.bat`**.
+1. **Close AutoCAD.**
+2. Install it with **either** of these:
+   - **PowerShell, one line.** Start menu → type `powershell` → Enter. Paste this line and press Enter:
+     ```powershell
+     irm https://raw.githubusercontent.com/lumidren/Line-Gap-Checker/main/install.ps1 | iex
+     ```
+   - **Zip.** Download **`LineGapChecker.zip`**, right-click it → **Extract All**, then double-click **`install.bat`** in the extracted folder.
+3. **Start AutoCAD.** If it asks whether to load `LineGapChecker.dll`, choose **Always Load**.
+4. The command line shows `LineGapChecker loaded. Commands: GAPCHECK, GAPSET, GAPRESET`. You're ready.
 
-Then start AutoCAD and type `GAPCHECK`. If AutoCAD asks whether to load `LineGapChecker.dll`, choose **Always Load**. From now on the plugin loads by itself every time AutoCAD starts.
+You don't need to pick a version: the install holds the builds for AutoCAD 2019–2024, 2025–2026 and 2027+, and AutoCAD loads the right one.
 
-**Option 3: just the DLL.** The [latest release](https://github.com/lumidren/Line-Gap-Checker/releases/latest) also has each build as a single file: `LineGapChecker-AutoCAD-2019-2024.dll`, `LineGapChecker-AutoCAD-2025-2026.dll` and `LineGapChecker-AutoCAD-2027.dll`. Download the one for your version, right-click it → **Properties** → tick **Unblock**, then load it in AutoCAD with `NETLOAD`. This loads it for the current session only.
+### Way 2: load a single DLL for this session only
 
-Options 1 and 2 install the same bundle into `%APPDATA%\Autodesk\ApplicationPlugins`. It holds three builds, and AutoCAD picks the one that matches its version:
+Good for a quick try, or on a PC where you don't want to install anything.
 
-| AutoCAD | Runtime | Build |
-|---|---|---|
-| 2019 – 2024 | .NET Framework 4.8 | `net48` |
-| 2025 – 2026 | .NET 8 | `net8` |
-| 2027 and newer | .NET 10 | `net10` |
+1. Download the DLL for your AutoCAD. To find your version, type `ABOUT` in AutoCAD, or look at the year on the start-up screen.
 
-**Update:** run the same line again, or the new zip's `install.bat`. **Remove:** run `GAPRESET` in any drawing that is still coloured, close AutoCAD, then run `uninstall.bat` from the zip, or:
+   | Your AutoCAD | Download |
+   |---|---|
+   | 2019, 2020, 2021, 2022, 2023, 2024 | `LineGapChecker-AutoCAD-2019-2024.dll` |
+   | 2025, 2026 | `LineGapChecker-AutoCAD-2025-2026.dll` |
+   | 2027 and newer | `LineGapChecker-AutoCAD-2027.dll` |
 
-```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/lumidren/Line-Gap-Checker/main/install.ps1))) -Uninstall
-```
+2. Right-click the downloaded file → **Properties** → tick **Unblock** at the bottom → **OK**. Windows blocks downloaded DLLs, and AutoCAD won't load a blocked one.
+3. In AutoCAD, type `NETLOAD`, press Enter and pick the file. If AutoCAD asks, choose **Load Once** or **Always Load**.
 
-📘 Security prompts, units, settings and troubleshooting: **[INSTALL.md](INSTALL.md)**.
+The plugin stays loaded until you close AutoCAD. After a restart, run `NETLOAD` again, or use Way 1.
+
+### Update or remove
+
+- **Update:** close AutoCAD and repeat Way 1 with the new release. It replaces the old version.
+- **Remove:** run `GAPRESET` in any drawing that still has coloured objects, close AutoCAD, then double-click `uninstall.bat` from the zip, or run:
+  ```powershell
+  & ([scriptblock]::Create((irm https://raw.githubusercontent.com/lumidren/Line-Gap-Checker/main/install.ps1))) -Uninstall
+  ```
+
+📘 For security prompts, trusted folders and troubleshooting, see **[INSTALL.md](INSTALL.md)**.
 
 ## How to use it
 
-1. **Start AutoCAD** with the plugin installed. The command line lists the commands. (To try it without installing, type `NETLOAD` and pick `LineGapChecker.dll`.)
-2. **Check.** Type `GAPCHECK`, then press **Enter** to check everything, or select only the objects you want. Problem objects turn blue or magenta, and the command line shows a summary like this:
+### Commands
+
+| Command | What it does |
+|---|---|
+| `GAPCHECK` | Checks the drawing and colours problems: **blue** = extend, **magenta** = trim |
+| `GAPSET` | Changes the limits (gap size, overshoot size, units) for this AutoCAD session |
+| `GAPRESET` | Gives every coloured object its original colour back |
+
+### Step by step
+
+1. **Check the drawing units once.** Type `UNITS` and look at **Insertion scale**. It must say what one drawing unit really is (Millimeters, Meters, and so on). The limits are in real metres, so the plugin converts them using this setting. Wrong units give wrong results.
+2. **Run the check.** Type `GAPCHECK` and press Enter. Then either:
+   - press **Enter** again to check everything in the current model space or layout, or
+   - select only the objects you want (a window works), then press Enter.
+
+   You can also select objects first and then type `GAPCHECK`.
+3. **Read the result.** Problem objects turn blue or magenta. The command line shows a summary like this:
    ```
    GAPCHECK: 1240 object(s) checked in 85 ms. Units: millimetres (INSUNITS=4).
      1100 line(s), 60 arc(s), 10 circle(s), 70 polyline(s).
@@ -60,24 +90,44 @@ Options 1 and 2 install the same bundle into `%APPDATA%\Autodesk\ApplicationPlug
        TRIM overshoot      0.0040 m  at 6000,-4
        EXTEND to line      0.0500 m  at 2000,50
    ```
-   Each finding gives the problem type, its size in metres and where it is.
-3. **Fix** the coloured objects with `EXTEND` and `TRIM`, then run `GAPCHECK` again until nothing is flagged. Re-running clears the old colours first, so results never pile up.
-4. **Clean up.** Type `GAPRESET` to give every object its original colour back.
+   Each finding line gives the problem, its size in metres, and the point in drawing coordinates where it is. Up to 30 findings are listed. Press **F2** to open the text window if the list scrolls away.
 
-Undo works too: one `UNDO` after `GAPCHECK` reverses the whole check.
+   | Finding | Meaning | Fix with |
+   |---|---|---|
+   | `EXTEND to line` | The end stops short of another object | `EXTEND` |
+   | `EXTEND corner` | Two ends both stop short of the corner they should meet at | `FILLET` with radius 0, or `EXTEND` both |
+   | `EXTEND collinear` | A gap in a straight run, or between arcs on the same circle | `JOIN`, or `EXTEND` |
+   | `TRIM overshoot` | The end sticks out past a crossing by a few mm | `TRIM` |
+   | `TRIM short line` | The whole object is tiny (5 mm or less), usually a stray bit | `ERASE` |
+
+4. **Find and fix them.**
+   - To jump to a finding, type `ZOOM` → `C` (Center), type the point from the summary, e.g. `2000,50`, then a small height.
+   - To select every flagged object at once, use `QSELECT` → **Color** → **Blue** (or **Magenta**).
+   - Fix them with `EXTEND`, `TRIM`, `FILLET` (radius 0) or `ERASE`.
+5. **Check again.** Run `GAPCHECK` until it reports `0` to extend and `0` to trim. Each run restores the previous colours first, so results never pile up.
+6. **Clean up.** Type `GAPRESET` to put every original colour back, then save.
+
+Changed your mind? One `UNDO` right after `GAPCHECK` reverses the whole check.
 
 ### Changing the limits (optional)
 
-Type `GAPSET` to change the limits for the current AutoCAD session:
+Type `GAPSET`, pick an option, type the new value, and press **Enter** on an empty prompt to finish. Lengths are in metres. The values last until AutoCAD is closed, then the defaults apply again.
 
 | Option | Default | What it controls |
 |---|---|---|
-| `Short` | 0.005 m (5 mm) | Largest overshoot to trim; lines this short or shorter are flagged |
-| `Gap` | 0.10 m (10 cm) | Largest gap to report |
-| `Tolerance` | 0.000001 m | How close two lines must be to count as touching |
-| `Units` | 0 = automatic | Drawing units per metre. Normally read from `INSUNITS`. |
+| `Short` | 0.005 m (5 mm) | Largest overshoot to trim. Objects this short or shorter are flagged too. |
+| `Gap` | 0.10 m (10 cm) | Largest gap to report. Bigger gaps are treated as intentional. |
+| `Tolerance` | 0.000001 m | How close two objects must be to count as touching |
+| `Units` | 0 = automatic | Drawing units per metre. Leave it at 0 to read `INSUNITS`. Set it, for example `1000` for millimetres, only if the drawing's units are wrong and you can't change them. |
+| `Defaults` | | Puts everything back to the defaults |
 
-The plugin reads the drawing's units from `INSUNITS` (mm, cm, m, km, in, ft, yd, mi and more), so the limits are always in real metres. If the units aren't set, it assumes metres and prints a warning.
+The plugin understands mm, cm, m, km, inches, feet, yards, miles and more. If the drawing has no units set, it assumes metres and prints a warning.
+
+### Good to know
+
+- **Locked layers** are checked but not recoloured. The summary says how many were skipped: unlock the layer and run `GAPCHECK` again.
+- **A whole polyline turns blue or magenta** even when only one end is wrong, because a polyline is one object. The summary's point shows which end.
+- **Colours are saved in the drawing.** If you save and close before `GAPRESET`, run `GAPRESET` later. It still restores the original colours.
 
 ### What gets checked
 
