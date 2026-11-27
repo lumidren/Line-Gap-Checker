@@ -29,7 +29,9 @@ irm https://raw.githubusercontent.com/lumidren/Line-Gap-Checker/main/install.ps1
 
 Then start AutoCAD and type `GAPCHECK`. If AutoCAD asks whether to load `LineGapChecker.dll`, choose **Always Load**. From now on the plugin loads by itself every time AutoCAD starts.
 
-Either way installs the same bundle into `%APPDATA%\Autodesk\ApplicationPlugins`. It holds three builds, and AutoCAD picks the one that matches its version:
+**Option 3: just the DLL.** The [latest release](https://github.com/lumidren/Line-Gap-Checker/releases/latest) also has each build as a single file: `LineGapChecker-AutoCAD-2019-2024.dll`, `LineGapChecker-AutoCAD-2025-2026.dll` and `LineGapChecker-AutoCAD-2027.dll`. Download the one for your version, right-click it → **Properties** → tick **Unblock**, then load it in AutoCAD with `NETLOAD`. This loads it for the current session only.
+
+Options 1 and 2 install the same bundle into `%APPDATA%\Autodesk\ApplicationPlugins`. It holds three builds, and AutoCAD picks the one that matches its version:
 
 | AutoCAD | Runtime | Build |
 |---|---|---|
