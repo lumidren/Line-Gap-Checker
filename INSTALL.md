@@ -64,14 +64,34 @@ AutoCAD warns before it loads code from a folder it doesn't trust (the `SECURELO
 
 ### Trying it without installing
 
-Download the single DLL for your version from the [latest release](https://github.com/lumidren/Line-Gap-Checker/releases/latest): `LineGapChecker-AutoCAD-2019-2024.dll`, `LineGapChecker-AutoCAD-2025-2026.dll` or `LineGapChecker-AutoCAD-2027.dll`. Or use the `LineGapChecker.dll` for your version from the unzipped `LineGapChecker.bundle\Contents` folder. Then in AutoCAD, type `NETLOAD` and pick it. You have to do this again after every AutoCAD restart. If `NETLOAD` refuses the file, right-click it → **Properties** → tick **Unblock** → **OK**.
+1. Download the DLL for your AutoCAD from the [latest release](https://github.com/lumidren/Line-Gap-Checker/releases/latest). Type `ABOUT` in AutoCAD if you're not sure of your version.
+
+   | Your AutoCAD | Download |
+   |---|---|
+   | 2019 – 2024 | `LineGapChecker-AutoCAD-2019-2024.dll` |
+   | 2025 – 2026 | `LineGapChecker-AutoCAD-2025-2026.dll` |
+   | 2027 and newer | `LineGapChecker-AutoCAD-2027.dll` |
+
+   The same builds are also in the zip, under `LineGapChecker.bundle\Contents\net48`, `net8` and `net10`.
+2. Right-click the DLL → **Properties** → tick **Unblock** → **OK**. AutoCAD refuses DLLs that Windows has marked as downloaded.
+3. In AutoCAD, type `NETLOAD` and pick the DLL. The command list appears on the command line.
+
+This lasts until you close AutoCAD. After a restart, run `NETLOAD` again.
 
 ## Step 3: Check that it works
 
-1. Open a drawing that contains lines, arcs or polylines. Or draw a quick test: one long horizontal line, and a vertical line that stops a little short of it.
-2. Type `GAPCHECK` and press **Enter** to check everything.
-3. Objects that stop short turn **blue**, and objects that stick out a little turn **magenta**. The command line prints a summary.
-4. Type `GAPRESET` to put the colours back.
+A two-minute test in a new drawing:
+
+1. Type `INSUNITS`, then `4` to set the drawing to millimetres.
+2. Draw three lines with `LINE`, typing the points:
+   - a floor: `0,0` to `1000,0`
+   - a wall that stops 50 mm short of the floor: `300,50` to `300,600`
+   - a wall that runs 4 mm past the floor: `700,-4` to `700,600`
+3. Type `GAPCHECK` and press **Enter** twice.
+4. The first wall turns **blue** (`EXTEND to line 0.0500 m`) and the second turns **magenta** (`TRIM overshoot 0.0040 m`). The floor stays as it is.
+5. Type `GAPRESET`. Both walls get their original colour back.
+
+How to use the plugin day to day is in the README, under [How to use it](README.md#how-to-use-it).
 
 ## Configuration
 
