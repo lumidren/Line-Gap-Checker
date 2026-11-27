@@ -19,7 +19,7 @@ This guide covers how to install the plugin so AutoCAD loads it on every start, 
    ```
 3. It downloads `LineGapChecker.zip` from the latest GitHub release and installs it. You should see:
    ```
-   Line Gap Checker 1.2.2 installed to C:\Users\<you>\AppData\Roaming\Autodesk\ApplicationPlugins\LineGapChecker.bundle
+   Line Gap Checker 1.3.0 installed to C:\Users\<you>\AppData\Roaming\Autodesk\ApplicationPlugins\LineGapChecker.bundle
    Builds: net10, net48, net8 (AutoCAD picks the right one for its version)
    ```
 
