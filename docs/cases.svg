@@ -1,33 +1,42 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 250" font-family="Segoe UI, Arial, sans-serif" font-size="14">
   <rect width="900" height="250" fill="#ffffff"/>
-  <g stroke-width="4" stroke-linecap="round">
+  <g stroke="#444" stroke-width="4" stroke-linecap="round">
     <!-- 1. T-gap -->
-    <line x1="20" y1="170" x2="160" y2="170" stroke="#444"/>
-    <line x1="90" y1="40" x2="90" y2="150" stroke="#1f5fff"/>
-    <line x1="90" y1="152" x2="90" y2="168" stroke="#1f5fff" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <line x1="20" y1="170" x2="160" y2="170"/>
+    <line x1="90" y1="40" x2="90" y2="150"/>
     <!-- 2. Open corner -->
-    <line x1="220" y1="170" x2="340" y2="170" stroke="#1f5fff" transform="translate(18 0)"/>
-    <line x1="220" y1="40" x2="220" y2="150" stroke="#1f5fff"/>
+    <line x1="238" y1="170" x2="358" y2="170"/>
+    <line x1="220" y1="40" x2="220" y2="150"/>
     <!-- 3. Collinear gap -->
-    <line x1="390" y1="110" x2="455" y2="110" stroke="#1f5fff"/>
-    <line x1="475" y1="110" x2="540" y2="110" stroke="#1f5fff"/>
+    <line x1="390" y1="110" x2="455" y2="110"/>
+    <line x1="475" y1="110" x2="540" y2="110"/>
     <!-- 4. Overshoot -->
-    <line x1="590" y1="150" x2="720" y2="150" stroke="#444"/>
-    <line x1="655" y1="40" x2="655" y2="165" stroke="#d01fd0"/>
+    <line x1="590" y1="150" x2="720" y2="150"/>
+    <line x1="655" y1="40" x2="655" y2="165"/>
     <!-- 5. Tiny line -->
-    <line x1="770" y1="150" x2="880" y2="150" stroke="#444"/>
-    <line x1="820" y1="110" x2="830" y2="110" stroke="#d01fd0" stroke-width="6"/>
+    <line x1="770" y1="150" x2="880" y2="150"/>
+    <line x1="820" y1="110" x2="830" y2="110" stroke-width="6"/>
+  </g>
+  <!-- Green markers, as GAPCHECK draws them: one on every spot to fix -->
+  <g fill="none" stroke="#1fae3f" stroke-width="2.5">
+    <circle cx="90" cy="150" r="13"/>
+    <circle cx="238" cy="170" r="13"/>
+    <circle cx="220" cy="150" r="13"/>
+    <circle cx="455" cy="110" r="13"/>
+    <circle cx="475" cy="110" r="13"/>
+    <circle cx="655" cy="165" r="13"/>
+    <circle cx="825" cy="110" r="13"/>
   </g>
   <g fill="#222" text-anchor="middle">
     <text x="90" y="205">Stops short of a line</text>
-    <text x="90" y="225" fill="#1f5fff">EXTEND</text>
-    <text x="280" y="205">Open corner</text>
-    <text x="280" y="225" fill="#1f5fff">EXTEND both</text>
+    <text x="90" y="225" font-weight="600">EXTEND</text>
+    <text x="289" y="205">Open corner</text>
+    <text x="289" y="225" font-weight="600">EXTEND both</text>
     <text x="465" y="205">Gap in a straight run</text>
-    <text x="465" y="225" fill="#1f5fff">EXTEND both</text>
+    <text x="465" y="225" font-weight="600">EXTEND both</text>
     <text x="655" y="205">Sticks out a few mm</text>
-    <text x="655" y="225" fill="#d01fd0">TRIM</text>
+    <text x="655" y="225" font-weight="600">TRIM</text>
     <text x="825" y="205">Tiny stray line</text>
-    <text x="825" y="225" fill="#d01fd0">TRIM</text>
+    <text x="825" y="225" font-weight="600">ERASE</text>
   </g>
 </svg>
